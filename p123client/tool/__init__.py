@@ -302,7 +302,8 @@ def _iterdir(
                 if interval > 0:
                     last_ts = time()
                 check_response(resp)
-                for info in resp["data"]["InfoList"]:
+                info_list = resp["data"]["InfoList"]
+                for info in info_list:
                     is_dir = info["is_dir"] = bool(info["Type"])
                     fid = info["id"] = int(info["FileId"])
                     info["parent_id"] = parent_id
@@ -328,8 +329,8 @@ def _iterdir(
                     if is_dir and (max_depth < 0 or depth < max_depth):
                         put((depth, fid, relpath + "/"))
                 if (
-                    not resp["data"]["InfoList"] or 
-                    len(resp["data"]["InfoList"]) < page_size or 
+                    not info_list or 
+                    len(info_list) < page_size or 
                     resp["data"]["Next"] == "-1"
                 ):
                     break

@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 # encoding: utf-8
 
-__all__ = ["P123Warning", "P123OSError", "P123BrokenUpload"]
+__all__ = [
+    "P123Warning", "P123OSError", "P123BrokenUpload", 
+    "P123AccessTokenError", "P123AuthenticationError", 
+]
 
 import warnings
 
@@ -45,5 +48,13 @@ class P123OSError(OSError):
 
 
 class P123BrokenUpload(P123OSError):
+    pass
+
+
+class P123AccessTokenError(P123OSError):
+    pass
+
+
+class P123AuthenticationError(P123OSError):
     pass
 

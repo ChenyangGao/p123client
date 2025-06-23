@@ -6,8 +6,8 @@ from __future__ import annotations
 __all__ = ["check_response", "P123OpenClient", "P123Client"]
 
 from collections.abc import (
-    AsyncIterable, Awaitable, Buffer, Callable, Coroutine, ItemsView, 
-    Iterable, Iterator, Mapping, MutableMapping, 
+    AsyncIterable, Awaitable, Buffer, Callable, Coroutine, 
+    ItemsView, Iterable, Iterator, Mapping, MutableMapping, 
 )
 from errno import EIO, EISDIR, ENOENT
 from functools import partial
@@ -17,7 +17,6 @@ from inspect import isawaitable
 from itertools import chain
 from os import fsdecode, fstat, PathLike
 from os.path import basename
-from platform import system
 from re import compile as re_compile
 from tempfile import TemporaryFile
 from typing import cast, overload, Any, Literal
@@ -40,18 +39,6 @@ from yarl import URL
 from .exception import P123OSError, P123BrokenUpload
 
 
-# 当前的系统平台
-SYS_PLATFORM = system()
-# 替换表，用于半角转全角，包括了 Windows 中不允许出现在文件名中的字符
-match SYS_PLATFORM:
-    case "Windows":
-        NAME_TANSTAB_FULLWIDH = {c: chr(c+65248) for c in b"\\/:*?|><"}
-    case "Darwin":
-        NAME_TANSTAB_FULLWIDH = {ord("/"): ":", ord(":"): "："}
-    case _:
-        NAME_TANSTAB_FULLWIDH = {ord("/"): "／"}
-# 查找大写字母（除了左边第 1 个）
-CRE_UPPER_ALPHABET_sub = re_compile("(?<!^)[A-Z]").sub
 # 默认使用的域名
 DEFAULT_BASE_URL = "https://www.123pan.com/b"
 DEFAULT_LOGIN_BASE_URL = "https://login.123pan.com"
@@ -118,6 +105,14 @@ def dict_to_lower_merge[K, V](
             k = k.lower() # type: ignore
         setdefault(k, v)
     return m
+
+
+def escape_filename(
+    s: str, 
+    /, 
+    table: dict[int, int | str] = {c: chr(c+65248) for c in b'"\\/:*?|><'}, # type: ignore
+) -> str:
+    return s.translate(table)
 
 
 def items[K, V](
@@ -711,6 +706,170 @@ class P123OpenClient:
         return self.request(api, params=payload, async_=async_, **request_kwargs)
 
     @overload
+    def dlink_m3u8(
+        self, 
+        payload: dict | int | str, 
+        /, 
+        base_url: str | Callable[[], str] = DEFAULT_OPEN_BASE_URL, 
+        *, 
+        async_: Literal[False] = False, 
+        **request_kwargs, 
+    ) -> dict:
+        ...
+    @overload
+    def dlink_m3u8(
+        self, 
+        payload: dict | int | str, 
+        /, 
+        base_url: str | Callable[[], str] = DEFAULT_OPEN_BASE_URL, 
+        *, 
+        async_: Literal[True], 
+        **request_kwargs, 
+    ) -> Coroutine[Any, Any, dict]:
+        ...
+    def dlink_m3u8(
+        self, 
+        payload: dict | int | str, 
+        /, 
+        base_url: str | Callable[[], str] = DEFAULT_OPEN_BASE_URL, 
+        *, 
+        async_: Literal[False, True] = False, 
+        **request_kwargs, 
+    ) -> dict | Coroutine[Any, Any, dict]:
+        """获取直链转码链接
+
+        GET https://open-api.123pan.com/api/v1/direct-link/get/m3u8
+
+        :payload:
+            - fileID: int 💡 文件 id
+
+        :return:
+            响应数据的 data 字段是一个字典，键值如下：
+
+            +---------------------+--------+----------+--------------------------------------------------------------+
+            | 名称                | 类型   | 是否必填 | 说明                                                         |
+            +=====================+========+==========+==============================================================+
+            | list                | array  | 必填     | 响应列表                                                     |
+            +---------------------+--------+----------+--------------------------------------------------------------|
+            | list[*].resolutions | string | 必填     | 分辨率                                                       |
+            +---------------------+--------+----------+--------------------------------------------------------------|
+            | list[*].address     | string | 必填     | 播放地址。请将播放地址放入支持的 hls 协议的播放器中进行播放。|
+            |                     |        |          | 示例在线播放地址: https://m3u8-player.com/                   |
+            |                     |        |          | 请注意：转码链接播放过程中将会消耗您的直链流量。             |
+            |                     |        |          | 如果您开启了直链鉴权,也需要将转码链接根据鉴权指引进行签名。  |
+            +---------------------+--------+----------+--------------------------------------------------------------+
+        """
+        api = complete_url("/api/v1/direct-link/get/m3u8", base_url)
+        if not isinstance(payload, dict):
+            payload = {"fileID": payload}
+        return self.request(api, params=payload, async_=async_, **request_kwargs)
+
+    @overload
+    def dlink_transcode(
+        self, 
+        payload: dict | int | str | Iterable[int | str], 
+        /, 
+        base_url: str | Callable[[], str] = DEFAULT_OPEN_BASE_URL, 
+        *, 
+        async_: Literal[False] = False, 
+        **request_kwargs, 
+    ) -> dict:
+        ...
+    @overload
+    def dlink_transcode(
+        self, 
+        payload: dict | int | str | Iterable[int | str], 
+        /, 
+        base_url: str | Callable[[], str] = DEFAULT_OPEN_BASE_URL, 
+        *, 
+        async_: Literal[True], 
+        **request_kwargs, 
+    ) -> Coroutine[Any, Any, dict]:
+        ...
+    def dlink_transcode(
+        self, 
+        payload: dict | int | str | Iterable[int | str], 
+        /, 
+        base_url: str | Callable[[], str] = DEFAULT_OPEN_BASE_URL, 
+        *, 
+        async_: Literal[False, True] = False, 
+        **request_kwargs, 
+    ) -> dict | Coroutine[Any, Any, dict]:
+        """发起直链转码
+
+        POST https://open-api.123pan.com/api/v1/direct-link/doTranscode
+
+        :payload:
+            - ids: list[int] 💡 视频文件 id 列表
+        """
+        api = complete_url("/api/v1/direct-link/doTranscode", base_url)
+        if not isinstance(payload, dict):
+            if isinstance(payload, (int, str)):
+                payload = [payload]
+            elif not isinstance(payload, (tuple, list)):
+                payload = list(payload)
+            payload = {"ids": payload}
+        return self.request(api, "POST", json=payload, async_=async_, **request_kwargs)
+
+    @overload
+    def dlink_transcode_query(
+        self, 
+        payload: dict | int | str | Iterable[int | str], 
+        /, 
+        base_url: str | Callable[[], str] = DEFAULT_OPEN_BASE_URL, 
+        *, 
+        async_: Literal[False] = False, 
+        **request_kwargs, 
+    ) -> dict:
+        ...
+    @overload
+    def dlink_transcode_query(
+        self, 
+        payload: dict | int | str | Iterable[int | str], 
+        /, 
+        base_url: str | Callable[[], str] = DEFAULT_OPEN_BASE_URL, 
+        *, 
+        async_: Literal[True], 
+        **request_kwargs, 
+    ) -> Coroutine[Any, Any, dict]:
+        ...
+    def dlink_transcode_query(
+        self, 
+        payload: dict | int | str | Iterable[int | str], 
+        /, 
+        base_url: str | Callable[[], str] = DEFAULT_OPEN_BASE_URL, 
+        *, 
+        async_: Literal[False, True] = False, 
+        **request_kwargs, 
+    ) -> dict | Coroutine[Any, Any, dict]:
+        """查询直链转码进度
+
+        POST https://open-api.123pan.com/api/v1/direct-link/queryTranscode
+
+        :payload:
+            - ids: str 💡 视频文件 id 列表
+
+        :return:
+            响应数据的 data 字段是一个字典，键值如下：
+
+            +-----------+-------+----------+-------------------------------------------+
+            | 名称      | 类型  | 是否必填 | 说明                                      |
+            +===========+=======+==========+===========================================+
+            | noneList  | array | 必填     | 未发起过转码的 ID                         |
+            | errorList | array | 必填     | 错误文件ID列表,这些文件ID无法进行转码操作 |
+            | success   | array | 必填     | 转码成功的文件ID列表                      |
+            +-----------+-------+----------+-------------------------------------------+
+        """
+        api = complete_url("/api/v1/direct-link/queryTranscode", base_url)
+        if not isinstance(payload, dict):
+            if isinstance(payload, (int, str)):
+                payload = [payload]
+            elif not isinstance(payload, (tuple, list)):
+                payload = list(payload)
+            payload = {"ids": payload}
+        return self.request(api, "POST", json=payload, async_=async_, **request_kwargs)
+
+    @overload
     def dlink_url(
         self, 
         payload: dict | int | str, 
@@ -751,7 +910,7 @@ class P123OpenClient:
             https://123yunpan.yuque.com/org-wiki-123yunpan-muaork/cr6ced/tdxfsmtemp4gu4o2
 
         :payload:
-            - fileID: int 💡 目录 id
+            - fileID: int 💡 文件 id
         """
         api = complete_url("/api/v1/direct-link/url", base_url)
         if not isinstance(payload, dict):
@@ -1596,7 +1755,7 @@ class P123OpenClient:
             https://123yunpan.yuque.com/org-wiki-123yunpan-muaork/cr6ced/trahy3lmds4o0i3r
 
         :payload:
-            - fileIDs: list[int]      💡 文件 id 数组
+            - fileIDs: list[int]      💡 文件 id 列表
             - toParentFileID: int = 0 💡 要移动到的目标目录 id，默认为根目录
             - sourceType: int = 1     💡 复制来源：1:云盘
             - type: int = 1           💡 业务类型，固定为 1
@@ -1770,7 +1929,7 @@ class P123OpenClient:
         return self.request(api, "POST", json=payload, async_=async_, **request_kwargs)
 
     @overload
-    def oss_info(
+    def oss_detail(
         self, 
         payload: dict | int | str, 
         /, 
@@ -1781,7 +1940,7 @@ class P123OpenClient:
     ) -> dict:
         ...
     @overload
-    def oss_info(
+    def oss_detail(
         self, 
         payload: dict | int | str, 
         /, 
@@ -1791,7 +1950,7 @@ class P123OpenClient:
         **request_kwargs, 
     ) -> Coroutine[Any, Any, dict]:
         ...
-    def oss_info(
+    def oss_detail(
         self, 
         payload: dict | int | str, 
         /, 
@@ -2144,7 +2303,7 @@ class P123OpenClient:
 
         :payload:
             - filename: str 💡 文件名
-            - duplicate: 0 | 1 | 2 = 0 💡 处理同名：0: 复用/跳过 1: 保留/后缀编号 2: 替换/覆盖
+            - duplicate: 0 | 1 | 2 = 0 💡 处理同名：0: 跳过/报错 1: 保留/后缀编号 2: 替换/覆盖
             - etag: str 💡 文件 md5
             - parentFileID: int = 0 💡 父目录 id，默认为根目录
             - size: int 💡 文件大小，单位：字节
@@ -2163,7 +2322,9 @@ class P123OpenClient:
                 }
         """
         api = complete_url("/upload/v1/oss/file/create", base_url)
-        payload = dict_to_lower_merge(payload, duplicate=0, type=1)
+        payload = dict_to_lower_merge(payload, type=1)
+        if "duplicate" in payload and not payload["duplicate"]:
+            del payload["duplicate"]
         return self.request(api, "POST", json=payload, async_=async_, **request_kwargs)
 
     @overload
@@ -2437,7 +2598,7 @@ class P123OpenClient:
         """上传文件
 
         .. note::
-            如果文件名中包含 Windows 文件名非法字符，则转换为对应的全角字符
+            如果文件名中包含字符 "\\/:*?|><，则转换为对应的全角字符
 
         .. admonition:: Reference
             /API列表/图床/上传图片/💡上传流程说明
@@ -2571,7 +2732,7 @@ class P123OpenClient:
                 file_name = getattr(file, "name", "")
                 file_name = basename(file_name)
             if file_name:
-                file_name = file_name.translate(NAME_TANSTAB_FULLWIDH)
+                file_name = escape_filename(file_name)
             else:
                 file_name = str(uuid4())
             if file_size < 0:
@@ -2726,7 +2887,7 @@ class P123OpenClient:
         :payload:
             - fileIDList: str 💡 分享文件 id 列表，最多 100 个，用逗号,分隔连接
             - shareExpire: 0 | 1 | 7 | 30 = 0 💡 分享链接有效期天数，0 为永久
-            - shareName: str 💡 分享链接名称，须小于 35 个字符且不能包含特殊字符
+            - shareName: str 💡 分享链接名称，须小于 35 个字符且不能包含特殊字符 "\\/:*?|><
             - sharePwd: str = "" 💡 设置分享链接提取码
             - trafficLimit: int = <default> 💡 免登陆限制流量，单位：字节
             - trafficLimitSwitch: 1 | 2 = <default> 💡 免登录流量限制开关：1:关闭 2:打开
@@ -2781,7 +2942,7 @@ class P123OpenClient:
             - isReward: 0 | 1 = 0    💡 是否开启打赏
             - payAmount: int = 1     💡 金额，从 1 到 99，单位：元
             - resourceDesc: str = "" 💡 资源描述
-            - shareName: str         💡 分享链接名称，须小于 35 个字符且不能包含特殊字符
+            - shareName: str         💡 分享链接名称，须小于 35 个字符且不能包含特殊字符 "\\/:*?|><
         """
         api = complete_url("/api/v1/share/content-payment/create", base_url)
         payload = dict_to_lower_merge(payload, {"payAmount": 1, "isReward": 0, "resourceDesc": ""})
@@ -2991,55 +3152,6 @@ class P123OpenClient:
         return self.request(api, "POST", json=payload, async_=async_, **request_kwargs)
 
     @overload
-    def transcode_download_one(
-        self, 
-        payload: dict, 
-        /, 
-        base_url: str | Callable[[], str] = DEFAULT_OPEN_BASE_URL, 
-        *, 
-        async_: Literal[False] = False, 
-        **request_kwargs, 
-    ) -> dict:
-        ...
-    @overload
-    def transcode_download_one(
-        self, 
-        payload: dict, 
-        /, 
-        base_url: str | Callable[[], str] = DEFAULT_OPEN_BASE_URL, 
-        *, 
-        async_: Literal[True], 
-        **request_kwargs, 
-    ) -> Coroutine[Any, Any, dict]:
-        ...
-    def transcode_download_one(
-        self, 
-        payload: dict, 
-        /, 
-        base_url: str | Callable[[], str] = DEFAULT_OPEN_BASE_URL, 
-        *, 
-        async_: Literal[False, True] = False, 
-        **request_kwargs, 
-    ) -> dict | Coroutine[Any, Any, dict]:
-        """单个转码文件下载（m3u8或ts）
-
-        POST https://open-api.123pan.com/api/v1/transcode/m3u8_ts/download
-
-        .. admonition:: Reference
-            /API列表/视频转码/视频文件下载/单个转码文件下载（m3u8或ts）
-
-            https://123yunpan.yuque.com/org-wiki-123yunpan-muaork/cr6ced/yf97p60yyzb8mzbr
-
-        :payload:
-            - fileId: int     💡 文件 id
-            - resolution: str 💡 分辨率
-            - type: int       💡 文件类型：1:m3u8 2:ts
-            - tsName: str     💡 下载 ts 文件时必须要指定名称，请参考查询某个视频的转码结果
-        """
-        api = complete_url("/api/v1/transcode/m3u8_ts/download", base_url)
-        return self.request(api, "POST", json=payload, async_=async_, **request_kwargs)
-
-    @overload
     def transcode_download_all(
         self, 
         payload: dict | int | str, 
@@ -3090,6 +3202,55 @@ class P123OpenClient:
         if not isinstance(payload, dict):
             payload = {"fileId": payload}
         payload = dict_to_lower_merge(payload, zipName=f"转码{payload.get('fileid', '')}.zip")
+        return self.request(api, "POST", json=payload, async_=async_, **request_kwargs)
+
+    @overload
+    def transcode_m3u8_ts_download(
+        self, 
+        payload: dict, 
+        /, 
+        base_url: str | Callable[[], str] = DEFAULT_OPEN_BASE_URL, 
+        *, 
+        async_: Literal[False] = False, 
+        **request_kwargs, 
+    ) -> dict:
+        ...
+    @overload
+    def transcode_m3u8_ts_download(
+        self, 
+        payload: dict, 
+        /, 
+        base_url: str | Callable[[], str] = DEFAULT_OPEN_BASE_URL, 
+        *, 
+        async_: Literal[True], 
+        **request_kwargs, 
+    ) -> Coroutine[Any, Any, dict]:
+        ...
+    def transcode_m3u8_ts_download(
+        self, 
+        payload: dict, 
+        /, 
+        base_url: str | Callable[[], str] = DEFAULT_OPEN_BASE_URL, 
+        *, 
+        async_: Literal[False, True] = False, 
+        **request_kwargs, 
+    ) -> dict | Coroutine[Any, Any, dict]:
+        """单个转码文件下载（m3u8或ts）
+
+        POST https://open-api.123pan.com/api/v1/transcode/m3u8_ts/download
+
+        .. admonition:: Reference
+            /API列表/视频转码/视频文件下载/单个转码文件下载（m3u8或ts）
+
+            https://123yunpan.yuque.com/org-wiki-123yunpan-muaork/cr6ced/yf97p60yyzb8mzbr
+
+        :payload:
+            - fileId: int     💡 文件 id
+            - resolution: str 💡 分辨率
+            - type: int       💡 文件类型：1:m3u8 2:ts
+            - tsName: str     💡 下载 ts 文件时必须要指定名称，请参考查询某个视频的转码结果
+        """
+        api = complete_url("/api/v1/transcode/m3u8_ts/download", base_url)
         return self.request(api, "POST", json=payload, async_=async_, **request_kwargs)
 
     @overload
@@ -3486,7 +3647,7 @@ class P123OpenClient:
         :payload:
             - containDir: "false" | "true" = "false" 💡 上传文件是否包含路径
             - filename: str 💡 文件名，但 `containDir` 为 "true" 时，视为路径
-            - duplicate: 0 | 1 | 2 = 0 💡 处理同名：0: 复用/跳过 1: 保留/后缀编号 2: 替换/覆盖
+            - duplicate: 0 | 1 | 2 = 0 💡 处理同名：0: 跳过/报错 1: 保留/后缀编号 2: 替换/覆盖
             - etag: str 💡 文件 md5
             - parentFileID: int = 0 💡 父目录 id，根目录是 0
             - size: int 💡 文件大小，单位：字节
@@ -3505,10 +3666,11 @@ class P123OpenClient:
         """
         api = complete_url("/upload/v1/file/create", base_url)
         payload = dict_to_lower_merge(payload, {
-            "duplicate": 0, 
             "parentFileId": 0, 
             "containDir": "false", 
         })
+        if "duplicate" in payload and not payload["duplicate"]:
+            del payload["duplicate"]
         return self.request(api, "POST", json=payload, async_=async_, **request_kwargs)
 
     @overload
@@ -3788,7 +3950,7 @@ class P123OpenClient:
         """上传文件
 
         .. note::
-            如果文件名中包含 Windows 文件名非法字符，则转换为对应的全角字符
+            如果文件名中包含字符 "\\/:*?|><，则转换为对应的全角字符
 
         .. admonition:: Reference
             /API列表/文件管理/上传/v1/💡上传流程说明
@@ -3926,7 +4088,7 @@ class P123OpenClient:
                 file_name = getattr(file, "name", "")
                 file_name = basename(file_name)
             if file_name:
-                file_name = file_name.translate(NAME_TANSTAB_FULLWIDH)
+                file_name = escape_filename(file_name)
             else:
                 file_name = str(uuid4())
             if file_size < 0:
@@ -4099,6 +4261,9 @@ class P123OpenClient:
     dlink_disable_open = dlink_disable
     dlink_enable_open = dlink_enable
     dlink_log_open = dlink_log
+    dlink_m3u8_open = dlink_m3u8
+    dlink_transcode_open = dlink_transcode
+    dlink_transcode_query_open = dlink_transcode_query
     dlink_url_open = dlink_url
     download_info_open = download_info
     fs_delete_open = fs_delete
@@ -4118,7 +4283,7 @@ class P123OpenClient:
     oss_copy_fail_open = oss_copy_fail
     oss_copy_process_open = oss_copy_process
     oss_delete_open = oss_delete
-    oss_info_open = oss_info
+    oss_detail_open = oss_detail
     oss_list_open = oss_list
     oss_mkdir_open = oss_mkdir
     oss_move_open = oss_move
@@ -4137,7 +4302,7 @@ class P123OpenClient:
     transcode_delete_open = transcode_delete
     transcode_download_open = transcode_download
     transcode_download_all_open = transcode_download_all
-    transcode_download_one_open = transcode_download_one
+    transcode_m3u8_ts_download_open = transcode_m3u8_ts_download
     transcode_info_open = transcode_info
     transcode_list_open = transcode_list
     transcode_record_open = transcode_record
@@ -5894,7 +6059,8 @@ class P123Client(P123OpenClient):
         def to_snake_case(
             payload: dict[str, Any], 
             /, 
-            mapping={
+            *, 
+            _map = {
                 "sharekey": "share_key", 
                 "sharepwd": "share_pwd", 
                 "filelist": "file_list", 
@@ -5903,15 +6069,16 @@ class P123Client(P123OpenClient):
                 "parentfileid": "parent_file_id", 
                 "driveid": "drive_id", 
                 "currentlevel": "current_level", 
-            }, 
+            }.get, 
+            _sub = re_compile("(?<!^)[A-Z]").sub, 
         ):
             d: dict[str, Any] = {}
             for k, v in payload.items():
                 if "_" in k:
                     d[k.lower()] = v
-                elif k2 := mapping.get(k.lower()):
+                elif k2 := _map(k.lower()):
                     d[k2] = v
-                elif (k2 := CRE_UPPER_ALPHABET_sub(r"_\g<0>", k)) != k:
+                elif (k2 := _sub(r"_\g<0>", k)) != k:
                     d[k2.lower()] = v
                 else:
                     d[k] = v
@@ -6610,7 +6777,7 @@ class P123Client(P123OpenClient):
         """上传文件
 
         .. note::
-            如果文件名中包含 Windows 文件名非法字符，则转换为对应的全角字符
+            如果文件名中包含字符 "\\/:*?|><，则转换为对应的全角字符
 
         :param file: 待上传的文件
 
@@ -6737,7 +6904,7 @@ class P123Client(P123OpenClient):
                 file_name = getattr(file, "name", "")
                 file_name = basename(file_name)
             if file_name:
-                file_name = file_name.translate(NAME_TANSTAB_FULLWIDH)
+                file_name = escape_filename(file_name)
             else:
                 file_name = str(uuid4())
             if file_size < 0:
@@ -6967,7 +7134,7 @@ class P123Client(P123OpenClient):
                 file_name = getattr(file, "name", "")
                 file_name = basename(file_name)
             if file_name:
-                file_name = file_name.translate(NAME_TANSTAB_FULLWIDH)
+                file_name = escape_filename(file_name)
             if not file_name:
                 file_name = str(uuid4())
             if file_size < 0:
