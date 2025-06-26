@@ -280,7 +280,7 @@ def _iterdir(
     :return: 迭代器，产生文件或目录的信息
     """
     default_payload = payload
-    page_size = int(payload["limit"])
+    page_size = int(payload.setdefault("limit", 100))
     def gen_step():
         nonlocal parent_id
         dq: deque[tuple[int, int, str]] = deque()

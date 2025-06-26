@@ -40,6 +40,9 @@ from .exception import P123OSError, P123BrokenUpload
 
 
 # 默认使用的域名
+# "https://www.123pan.com"
+# "https://www.123pan.com/a"
+# "https://www.123pan.com/b"
 DEFAULT_BASE_URL = "https://www.123pan.com/b"
 DEFAULT_LOGIN_BASE_URL = "https://login.123pan.com"
 DEFAULT_OPEN_BASE_URL = "https://open-api.123pan.com"
@@ -105,6 +108,20 @@ def dict_to_lower_merge[K, V](
             k = k.lower() # type: ignore
         setdefault(k, v)
     return m
+
+
+def update_headers_in_kwargs(
+    request_kwargs: dict, 
+    /, 
+    *args, 
+    **kwargs, 
+):
+    if headers := request_kwargs.get("headers"):
+        headers = dict(headers)
+    else:
+        headers = {}
+    headers.update(*args, **kwargs)
+    request_kwargs["headers"] = headers
 
 
 def escape_filename(
@@ -961,6 +978,7 @@ class P123OpenClient:
             - fileId: int 💡 文件 id
         """
         api = complete_url("/api/v1/file/download_info", base_url)
+        update_headers_in_kwargs(request_kwargs, platform="android")
         if not isinstance(payload, dict):
             payload = {"fileId": payload}
         return self.request(api, params=payload, async_=async_, **request_kwargs)
@@ -4506,12 +4524,7 @@ class P123Client(P123OpenClient):
         """
         def gen_step():
             nonlocal payload
-            if headers := request_kwargs.get("headers"):
-                headers = dict(headers)
-            else:
-                headers = {}
-            headers["platform"] = "android"
-            request_kwargs["headers"] = headers
+            update_headers_in_kwargs(request_kwargs, platform="android")
             if not isinstance(payload, dict):
                 resp = yield self.fs_info(
                     payload, 
@@ -4521,8 +4534,7 @@ class P123Client(P123OpenClient):
                 )
                 resp["payload"] = payload
                 check_response(resp)
-                info_list = resp["data"]["infoList"]
-                if not info_list:
+                if not (info_list := resp["data"]["infoList"]):
                     raise FileNotFoundError(ENOENT, resp)
                 payload = cast(dict, info_list[0])
                 if payload["Type"]:
@@ -4600,6 +4612,107 @@ class P123Client(P123OpenClient):
             async_=async_, 
             **request_kwargs, 
         )
+
+    @overload
+    def download_url(
+        self, 
+        payload: dict | int | str, 
+        /, 
+        *, 
+        async_: Literal[False] = False, 
+        **request_kwargs, 
+    ) -> str:
+        ...
+    @overload
+    def download_url(
+        self, 
+        payload: dict | int | str, 
+        /, 
+        *, 
+        async_: Literal[True], 
+        **request_kwargs, 
+    ) -> Coroutine[Any, Any, str]:
+        ...
+    def download_url(
+        self, 
+        payload: dict | int | str, 
+        /, 
+        *, 
+        async_: Literal[False, True] = False, 
+        **request_kwargs, 
+    ) -> str | Coroutine[Any, Any, str]:
+        """获取下载链接
+
+        .. note::
+            `payload` 支持多种格式的输入，按下面的规则按顺序进行判断：
+
+            1. 如果是 `int` 或 `str`，则视为文件 id，必须在你的网盘中存在此文件
+            2. 如果是 `dict`（不区分大小写），有 "S3KeyFlag", "Etag" 和 "Size" 的值，则直接获取链接，文件不必在你网盘中
+            3. 如果是 `dict`（不区分大小写），有 "Etag" 和 "Size" 的值，则会先秒传（临时文件路径为 /.tempfile）再获取链接，文件不必在你网盘中
+            4. 如果是 `dict`（不区分大小写），有 "FileID"，则会先获取信息，再获取链接，必须在你的网盘中存在此文件
+            5. 否则会报错 ValueError
+
+        :params payload: 文件 id 或者文件信息，文件信息必须包含的信息如下：
+
+            - FileID: int | str 💡 下载链接
+            - S3KeyFlag: str    💡 存储桶名
+            - Etag: str         💡 文件的 MD5 散列值
+            - Size: int         💡 文件大小
+            - FileName: str     💡 默认用 Etag（即 MD5）作为文件名，可以省略
+
+        :params async_: 是否异步
+        :params request_kwargs: 其它请求参数
+
+        :return: 下载链接
+        """
+        def gen_step():
+            nonlocal payload
+            if isinstance(payload, dict):
+                payload = dict_to_lower(payload)
+                if not ("size" in payload and "etag" in payload):
+                    if fileid := payload.get("fileid"):
+                        resp = yield self.fs_info(fileid, async_=async_, **request_kwargs)
+                        check_response(resp)
+                        if not (info_list := resp["data"]["infoList"]):
+                            raise P123OSError(ENOENT, resp)
+                        info = info_list[0]
+                        if info["Type"]:
+                            raise IsADirectoryError(EISDIR, resp)
+                        payload = dict_to_lower_merge(payload, info)
+                    else:
+                        raise ValueError("`Size` and `Etag` must be provided")
+                if "s3keyflag" not in payload:
+                    resp = yield self.upload_request(
+                        {
+                            "filename": ".tempfile", 
+                            "duplicate": 2, 
+                            "etag": payload["etag"], 
+                            "size": payload["size"], 
+                            "type": 0, 
+                        }, 
+                        async_=async_, 
+                        **request_kwargs, 
+                    )
+                    check_response(resp)
+                    if not resp["data"]["Reuse"]:
+                        raise P123OSError(ENOENT, resp)
+                    payload["s3keyflag"] = resp["data"]["Info"]["S3KeyFlag"]
+                resp = yield self.download_info(
+                    payload, 
+                    async_=async_, 
+                    **request_kwargs, 
+                )
+                check_response(resp)
+                return resp["data"]["DownloadUrl"]
+            else:
+                resp = yield self.download_info_open(
+                    payload, 
+                    async_=async_, 
+                    **request_kwargs, 
+                )
+                check_response(resp)
+                return resp["data"]["downloadUrl"]
+        return run_gen_step(gen_step, async_=async_)
 
     @overload
     def fs_copy(
@@ -5904,12 +6017,7 @@ class P123Client(P123OpenClient):
             payload = self
             self = None
         assert payload is not None
-        if headers := request_kwargs.get("headers"):
-            headers = dict(headers)
-        else:
-            headers = {}
-        headers["platform"] = "android"
-        request_kwargs["headers"] = headers
+        update_headers_in_kwargs(request_kwargs, platform="android")
         api = complete_url("share/download/info", base_url)
         if self is None:
             request_kwargs.setdefault("parse", default_parse)
@@ -7247,3 +7355,7 @@ class P123Client(P123OpenClient):
         return request(url=api, method="POST", json=payload, **request_kwargs)
 
 # TODO: 添加扫码登录接口，以及通过扫码登录的方法
+# TODO: 添加 同步空间 和 直链空间 的操作接口
+# TODO: 添加 图床 的操作接口
+# TODO: 添加 视频转码 的操作接口
+# TODO: 对于某些工具的接口封装，例如 重复文件清理
