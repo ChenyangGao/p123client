@@ -7,6 +7,7 @@ __all__ = ["check_response", "P123OpenClient", "P123Client"]
 
 import errno
 
+from asyncio import Lock as AsyncLock
 from base64 import urlsafe_b64decode
 from collections.abc import (
     AsyncIterable, Awaitable, Buffer, Callable, Coroutine, 
@@ -17,14 +18,15 @@ from functools import partial
 from hashlib import md5
 from http.cookiejar import CookieJar
 from inspect import isawaitable
-from itertools import chain
+from itertools import chain, count
 from os import fsdecode, fstat, isatty, PathLike
 from os.path import basename
 from pathlib import Path, PurePath
 from re import compile as re_compile, MULTILINE
-from string import digits, ascii_uppercase
+from string import digits, hexdigits, ascii_uppercase
 from sys import _getframe
 from tempfile import TemporaryFile
+from threading import Lock
 from typing import cast, overload, Any, Final, Literal, Self
 from urllib.parse import parse_qsl, urlsplit
 from uuid import uuid4
@@ -48,7 +50,8 @@ from yarl import URL
 
 from .const import CLIENT_API_METHODS_MAP, CLIENT_METHOD_API_MAP
 from .exception import (
-    P123OSError, P123BrokenUpload, P123LoginError, P123AuthenticationError, P123FileNotFoundError, 
+    P123Warning, P123OSError, P123BrokenUpload, P123LoginError, 
+    P123AuthenticationError, P123FileNotFoundError, 
 )
 
 
@@ -210,47 +213,127 @@ def check_response(resp: dict | Awaitable[dict], /) -> dict | Coroutine[Any, Any
 
 
 class P123OpenClient:
-    """123 网盘客户端
+    """123 网盘客户端，仅使用开放接口
 
     .. admonition:: Reference
 
         https://123yunpan.yuque.com/org-wiki-123yunpan-muaork/cr6ced
-    """
 
+    :param client_id: 应用标识，创建应用时分配的 appId
+    :param client_secret: 应用密钥，创建应用时分配的 secretId
+    :param token: 123 的访问令牌
+    :param refresh_token: 刷新令牌
+    :param check_for_relogin: 当 access_token 失效时，是否重新登录
+    """
     client_id: str = ""
     client_secret: str = ""
     refresh_token: str = ""
     token_path: None | PurePath = None
+    check_for_relogin: bool = False
 
     def __init__(
-        self, /, 
+        self, 
+        /, 
         client_id: str | PathLike = "", 
         client_secret: str = "", 
         token: None | str | PathLike = None, 
         refresh_token: str = "", 
+        check_for_relogin: bool = True, 
     ):
-        if isinstance(client_id, PathLike):
-            token = client_id
-        else:
-            self.client_id = client_id
-        self.client_secret = client_secret
-        self.refresh_token = refresh_token
-        if token is None:
-            if client_id and client_secret or refresh_token:
-                self.login_open()
-        elif isinstance(token, str):
-            self.token = token.removeprefix("Bearer ")
-        else:
-            if isinstance(token, PurePath) and hasattr(token, "open"):
-                self.token_path = token
-            else:
-                self.token_path = Path(fsdecode(token))
-            self._read_token()
-            if not self.token and (client_id and client_secret or refresh_token):
-                self.login_open()
+        self.init(
+            client_id=client_id, 
+            client_secret=client_secret, 
+            token=token, 
+            refresh_token=refresh_token, 
+            check_for_relogin=check_for_relogin, 
+            instance=self, 
+        )
 
     def __del__(self, /):
         self.close()
+
+    @overload
+    @classmethod
+    def init(
+        cls, 
+        /, 
+        client_id: str | PathLike = "", 
+        client_secret: str = "", 
+        token: None | str | PathLike = None, 
+        refresh_token: str = "", 
+        check_for_relogin: bool = True, 
+        instance: None | Self = None, 
+        *, 
+        async_: Literal[False] = False, 
+        **request_kwargs, 
+    ) -> P123OpenClient:
+        ...
+    @overload
+    @classmethod
+    def init(
+        cls, 
+        /, 
+        client_id: str | PathLike = "", 
+        client_secret: str = "", 
+        token: None | str | PathLike = None, 
+        refresh_token: str = "", 
+        check_for_relogin: bool = True, 
+        instance: None | Self = None, 
+        *, 
+        async_: Literal[True], 
+        **request_kwargs, 
+    ) -> Coroutine[Any, Any, P123OpenClient]:
+        ...
+    @classmethod
+    def init(
+        cls, 
+        /, 
+        client_id: str | PathLike = "", 
+        client_secret: str = "", 
+        token: None | str | PathLike = None, 
+        refresh_token: str = "", 
+        check_for_relogin: bool = True, 
+        instance: None | Self = None, 
+        *, 
+        async_: Literal[False, True] = False, 
+        **request_kwargs, 
+    ) -> P123OpenClient | Coroutine[Any, Any, P123OpenClient]:
+        def gen_step():
+            nonlocal token
+            if instance is None:
+                self = cls.__new__(cls)
+            else:
+                self = instance
+            if isinstance(client_id, PathLike):
+                token = client_id
+            else:
+                self.client_id = client_id
+            self.client_secret = client_secret
+            self.refresh_token = refresh_token
+            if token is None:
+                if client_id and client_secret or refresh_token:
+                    yield self.login_open(async_=async_, **request_kwargs)
+            elif isinstance(token, str):
+                self.token = token.removeprefix("Bearer ")
+            else:
+                if isinstance(token, PurePath) and hasattr(token, "open"):
+                    self.token_path = token
+                else:
+                    self.token_path = Path(fsdecode(token))
+                self._read_token()
+                if not self.token and (client_id and client_secret or refresh_token):
+                    yield self.login_open(async_=async_, **request_kwargs)
+            self.check_for_relogin = check_for_relogin
+            return self
+        return run_gen_step(gen_step, async_)
+
+    @locked_cacheproperty
+    def request_lock(self, /) -> Lock:
+        return Lock()
+
+    @locked_cacheproperty
+    def request_alock(self, /) -> AsyncLock:
+        return AsyncLock()
 
     @property
     def cookies(self, /):
@@ -380,6 +463,12 @@ class P123OpenClient:
         self.__dict__.pop("session", None)
         self.__dict__.pop("async_session", None)
 
+    def can_relogin(self, /) -> bool:
+        return self.check_for_relogin and bool(
+            self.client_id and self.client_secret or 
+            getattr(self, "refresh_token")
+        )
+
     def request(
         self, 
         /, 
@@ -397,22 +486,57 @@ class P123OpenClient:
         request_kwargs.setdefault("parse", default_parse)
         if request is None:
             request_kwargs["session"] = self.async_session if async_ else self.session
-            return get_default_request()(
-                url=url, 
-                method=method, 
-                async_=async_, 
-                **request_kwargs, 
-            )
+            request_kwargs["async_"] = async_
+            request = get_default_request()
+        if self.can_relogin():
+            headers = dict(self.headers)
+            if request_headers := request_kwargs.get("headers"):
+                headers.update(request_headers)
+            headers.setdefault("authorization", "")
+            request_kwargs["headers"] = headers
         else:
-            if headers := request_kwargs.get("headers"):
-                request_kwargs["headers"] = {**self.headers, **headers}
-            else:
-                request_kwargs["headers"] = self.headers
             return request(
                 url=url, 
                 method=method, 
                 **request_kwargs, 
             )
+        def gen_step():
+            if async_:
+                lock: Lock | AsyncLock = self.request_alock
+            else:
+                lock = self.request_lock
+            headers = request_kwargs["headers"]
+            if "authorization" not in headers:
+                headers["authorization"] = "Bearer " + self.token
+            for i in count(0):
+                token = headers["authorization"].removeprefix("Bearer ")
+                resp = yield cast(Callable, request)(
+                    url=url, 
+                    method=method, 
+                    **request_kwargs, 
+                )
+                if not (isinstance(resp, dict) and resp.get("code") == 401):
+                    return resp
+                yield lock.acquire()
+                try:
+                    token_new: str = self.token
+                    if token == token_new:
+                        if self.__dict__.get("token_path"):
+                            token_new = self._read_token() or ""
+                            if token != token_new:
+                                headers["authorization"] = "Bearer " + self.token
+                                continue
+                        if i:
+                            raise
+                        user_id = getattr(self, "user_id", None)
+                        warn(f"relogin to refresh token: {user_id=}", category=P123Warning)
+                        yield self.login(replace=True, async_=async_)
+                        headers["authorization"] = "Bearer " + self.token
+                    else:
+                        headers["authorization"] = "Bearer " + token_new
+                finally:
+                    lock.release()
+        return run_gen_step(gen_step, async_)
 
     @overload
     def login(
@@ -1644,7 +1768,7 @@ class P123OpenClient:
 
         :payload:
             - businessType: int = <default> 💡 业务类型：2:转码空间
-            - category: int = <default>     💡 分类代码：0:未知 1:音频 2:视频 3:图片 4:音频 5:其它
+            - category: int = <default>     💡 分类代码：0:未知 1:音频 2:视频 3:图片 4:音频 5:其它 6:保险箱 7:收藏夹
             - lastFileId: int = <default>   💡 上一页的最后一条记录的 FileID，翻页查询时需要填写
             - limit: int = 100              💡 分页大小，最多 100
             - parentFileId: int | str = 0   💡 父目录 id，根目录是 0
@@ -5549,52 +5673,132 @@ class P123Client(P123OpenClient):
         client_id: str = "", 
         client_secret: str = "", 
         refresh_token: str = "", 
+        check_for_relogin: bool = True, 
     ):
-        if (isinstance(passport, PathLike) or
-            not token and 
-            isinstance(passport, str) and 
-            len(passport) >= 128
-        ):
-            token = passport
-        elif (not refresh_token and 
-            isinstance(passport, str) and 
-            len(passport) >= 48 and 
-            not passport.strip(digits+ascii_uppercase)
-        ):
-            refresh_token = passport
-        elif (not client_id and 
-            isinstance(passport, str) and 
-            len(passport) >= 32 and 
-            not passport.strip(digits+"abcdef")
-        ):
-            client_id = passport
-        else:
-            self.passport = passport
-        if (not client_secret and 
-            isinstance(password, str) 
-            and len(password) >= 32 and 
-            not password.strip(digits+"abcdef")
-        ):
-            client_secret = password
-        else:
-            self.password = password
-        self.client_id = client_id
-        self.client_secret = client_secret
-        self.refresh_token = refresh_token
-        if token is None:
-            self.login()
-        elif isinstance(token, str):
-            self.token = token.removeprefix("Bearer ")
-        else:
-            if isinstance(token, PurePath) and hasattr(token, "open"):
-                self.token_path = token
+        self.init(
+            passport=passport, 
+            password=password, 
+            token=token, 
+            client_id=client_id, 
+            client_secret=client_secret, 
+            refresh_token=refresh_token, 
+            check_for_relogin=check_for_relogin, 
+            instance=self, 
+        )
+
+    @overload # type: ignore
+    @classmethod
+    def init(
+        cls, 
+        /, 
+        passport: int | str | PathLike = "", 
+        password: str = "", 
+        token: None | str | PathLike = None, 
+        client_id: str = "", 
+        client_secret: str = "", 
+        refresh_token: str = "", 
+        check_for_relogin: bool = True, 
+        instance: None | Self = None, 
+        *, 
+        async_: Literal[False] = False, 
+        **request_kwargs, 
+    ) -> P123Client:
+        ...
+    @overload
+    @classmethod
+    def init(
+        cls, 
+        /, 
+        passport: int | str | PathLike = "", 
+        password: str = "", 
+        token: None | str | PathLike = None, 
+        client_id: str = "", 
+        client_secret: str = "", 
+        refresh_token: str = "", 
+        check_for_relogin: bool = True, 
+        instance: None | Self = None, 
+        *, 
+        async_: Literal[True], 
+        **request_kwargs, 
+    ) -> Coroutine[Any, Any, P123Client]:
+        ...
+    @classmethod
+    def init(
+        cls, 
+        /, 
+        passport: int | str | PathLike = "", 
+        password: str = "", 
+        token: None | str | PathLike = None, 
+        client_id: str = "", 
+        client_secret: str = "", 
+        refresh_token: str = "", 
+        check_for_relogin: bool = True, 
+        instance: None | Self = None, 
+        *, 
+        async_: Literal[False, True] = False, 
+        **request_kwargs, 
+    ) -> P123Client | Coroutine[Any, Any, P123Client]:
+        def gen_step():
+            nonlocal token, refresh_token, client_id, client_secret
+            if instance is None:
+                self = cls.__new__(cls)
             else:
-                self.token_path = Path(fsdecode(token))
-            self._read_token()
-            if not self.token:
-                self.login()
-        if not self.passport:
-            self.passport = self.token_user_info["username"]
+                self = instance
+            if (isinstance(passport, PathLike) or
+                not token and 
+                isinstance(passport, str) and 
+                len(passport) >= 128
+            ):
+                token = passport
+            elif (not refresh_token and 
+                isinstance(passport, str) and 
+                len(passport) >= 48 and 
+                not passport.strip(digits+ascii_uppercase)
+            ):
+                refresh_token = passport
+            elif (not client_id and 
+                isinstance(passport, str) and 
+                len(passport) >= 32 and 
+                not passport.strip(digits+"abcdef")
+            ):
+                client_id = passport
+            else:
+                self.passport = passport
+            if (not client_secret and 
+                isinstance(password, str) 
+                and len(password) >= 32 and 
+                not password.strip(digits+"abcdef")
+            ):
+                client_secret = password
+            else:
+                self.password = password
+            self.client_id = client_id
+            self.client_secret = client_secret
+            self.refresh_token = refresh_token
+            if token is None:
+                yield self.login(async_=async_, **request_kwargs)
+            elif isinstance(token, str):
+                self.token = token.removeprefix("Bearer ")
+            else:
+                if isinstance(token, PurePath) and hasattr(token, "open"):
+                    self.token_path = token
+                else:
+                    self.token_path = Path(fsdecode(token))
+                self._read_token()
+                if not self.token:
+                    yield self.login(async_=async_, **request_kwargs)
+            if not self.passport:
+                self.passport = self.token_user_info["username"]
+            self.check_for_relogin = check_for_relogin
+            return self
+        return run_gen_step(gen_step, async_)
+
+    def can_relogin(self, /) -> bool:
+        return self.check_for_relogin and bool(
+            self.passport and self.password or
+            self.client_id and self.client_secret or 
+            getattr(self, "refresh_token")
+        )
 
     @overload # type: ignore
     def login(
@@ -5810,7 +6014,7 @@ class P123Client(P123OpenClient):
         """执行一次自动扫码，但并不因此更新 ``self.token``
 
         .. caution::
-            非会员目前只支持同时在线 3 台登录设备
+            非会员目前只支持同时在线 3 台登录设备，VIP 则支持同时在线 10 台
 
         :param platform: 用哪个设备平台扫码
         :param base_url: 接口的基地址
@@ -7032,6 +7236,8 @@ class P123Client(P123OpenClient):
                 - 3: 图片
                 - 4: 音频
                 - 5: 其它
+                - 6: 保险箱
+                - 7: 收藏夹
 
             - dateGranularity: int = <default> 💡 按时间分组展示
 
@@ -7419,6 +7625,98 @@ class P123Client(P123OpenClient):
         })
         return self.request(
             "file/rename", 
+            "POST", 
+            json=payload, 
+            base_url=base_url, 
+            async_=async_, 
+            **request_kwargs, 
+        )
+
+    @overload
+    def fs_safe_box_lock(
+        self, 
+        /, 
+        base_url: str | Callable[[], str] = DEFAULT_BASE_URL, 
+        *, 
+        async_: Literal[False] = False, 
+        **request_kwargs, 
+    ) -> dict:
+        ...
+    @overload
+    def fs_safe_box_lock(
+        self, 
+        /, 
+        base_url: str | Callable[[], str] = DEFAULT_BASE_URL, 
+        *, 
+        async_: Literal[True], 
+        **request_kwargs, 
+    ) -> Coroutine[Any, Any, dict]:
+        ...
+    def fs_safe_box_lock(
+        self, 
+        /, 
+        base_url: str | Callable[[], str] = DEFAULT_BASE_URL, 
+        *, 
+        async_: Literal[False, True] = False, 
+        **request_kwargs, 
+    ) -> dict | Coroutine[Any, Any, dict]:
+        """锁定保险箱
+
+        POST https://www.123pan.com/api/restful/goapi/v1/file/safe_box/auth/lock
+        """
+        return self.request(
+            "restful/goapi/v1/file/safe_box/auth/lock", 
+            "POST", 
+            base_url=base_url, 
+            async_=async_, 
+            **request_kwargs, 
+        )
+
+    @overload
+    def fs_safe_box_unlock(
+        self, 
+        payload: dict | int | str, 
+        /, 
+        base_url: str | Callable[[], str] = DEFAULT_BASE_URL, 
+        *, 
+        async_: Literal[False] = False, 
+        **request_kwargs, 
+    ) -> dict:
+        ...
+    @overload
+    def fs_safe_box_unlock(
+        self, 
+        payload: dict | int | str, 
+        /, 
+        base_url: str | Callable[[], str] = DEFAULT_BASE_URL, 
+        *, 
+        async_: Literal[True], 
+        **request_kwargs, 
+    ) -> Coroutine[Any, Any, dict]:
+        ...
+    def fs_safe_box_unlock(
+        self, 
+        payload: dict | int | str, 
+        /, 
+        base_url: str | Callable[[], str] = DEFAULT_BASE_URL, 
+        *, 
+        async_: Literal[False, True] = False, 
+        **request_kwargs, 
+    ) -> dict | Coroutine[Any, Any, dict]:
+        """解锁保险箱
+
+        .. note::
+            保险箱的 id，可以用 ``client.user_info()`` 接口获得，字段为 "SafeBoxFileId"
+
+        POST https://www.123pan.com/api/restful/goapi/v1/file/safe_box/auth/unlockbox
+
+        :payload:
+            - password: int | str 💡 6 位密码
+        """
+        if not isinstance(payload, dict):
+            payload = {"password": payload}
+        return self.request(
+            "restful/goapi/v1/file/safe_box/auth/unlockbox", 
             "POST", 
             json=payload, 
             base_url=base_url, 
@@ -8268,6 +8566,64 @@ class P123Client(P123OpenClient):
     ########## Offline Download API ##########
 
     @overload
+    def offline_task_abort(
+        self, 
+        payload: int | Iterable[int] | dict, 
+        /, 
+        base_url: str | Callable[[], str] = DEFAULT_BASE_URL, 
+        *, 
+        async_: Literal[False] = False, 
+        **request_kwargs, 
+    ) -> dict:
+        ...
+    @overload
+    def offline_task_abort(
+        self, 
+        payload: int | Iterable[int] | dict, 
+        /, 
+        base_url: str | Callable[[], str] = DEFAULT_BASE_URL, 
+        *, 
+        async_: Literal[True], 
+        **request_kwargs, 
+    ) -> Coroutine[Any, Any, dict]:
+        ...
+    def offline_task_abort(
+        self, 
+        payload: int | Iterable[int] | dict, 
+        /, 
+        base_url: str | Callable[[], str] = DEFAULT_BASE_URL, 
+        *, 
+        async_: Literal[False, True] = False, 
+        **request_kwargs, 
+    ) -> dict | Coroutine[Any, Any, dict]:
+        """取消离线下载任务
+
+        POST https://www.123pan.com/api/offline_download/task/abort
+
+        :payload:
+            - task_ids: list[int]   💡 任务 id 列表
+            - is_abort: bool = True 💡 是否取消
+            - all: bool = False     💡 是否全部
+        """
+        if isinstance(payload, int):
+            payload = {"task_ids": [payload]}
+        elif not isinstance(payload, dict):
+            if not isinstance(payload, (list, tuple)):
+                payload = tuple(payload)
+            payload = {"task_ids": payload}
+        payload = cast(dict, payload)
+        payload.setdefault("is_abort", True)
+        payload.setdefault("all", False)
+        return self.request(
+            "offline_download/task/abort", 
+            "POST", 
+            json=payload, 
+            base_url=base_url, 
+            async_=async_, 
+            **request_kwargs, 
+        )
+
+    @overload
     def offline_task_delete(
         self, 
         payload: int | Iterable[int] | dict, 
@@ -8324,7 +8680,7 @@ class P123Client(P123OpenClient):
     @overload
     def offline_task_list(
         self, 
-        payload: dict | int = 1, 
+        payload: dict | int | list[int] | tuple[int] = 1, 
         /, 
         base_url: str | Callable[[], str] = DEFAULT_BASE_URL, 
         *, 
@@ -8335,7 +8691,7 @@ class P123Client(P123OpenClient):
     @overload
     def offline_task_list(
         self, 
-        payload: dict | int = 1, 
+        payload: dict | int | list[int] | tuple[int] = 1, 
         /, 
         base_url: str | Callable[[], str] = DEFAULT_BASE_URL, 
         *, 
@@ -8345,7 +8701,7 @@ class P123Client(P123OpenClient):
         ...
     def offline_task_list(
         self, 
-        payload: dict | int = 1, 
+        payload: dict | int | list[int] | tuple[int] = 1, 
         /, 
         base_url: str | Callable[[], str] = DEFAULT_BASE_URL, 
         *, 
@@ -8362,9 +8718,10 @@ class P123Client(P123OpenClient):
             - status_arr: list[ 0 | 1 | 2 | 3 | 4 ] = [0, 1, 2, 3, 4] 💡 状态列表：0:进行中 1:下载失败 2:下载成功 3:重试中
         """
         if isinstance(payload, int):
-            payload = {"current_page": payload, "page_size": 100, "status_arr": [0, 1, 2, 3, 4]}
-        else:
-            payload = {"current_page": 1, "page_size": 100, "status_arr": [0, 1, 2, 3, 4], **payload}
+            payload = {"current_page": payload}
+        elif isinstance(payload, (list, tuple)):
+            payload = { "status_arr": payload}
+        payload = {"current_page": 1, "page_size": 100, "status_arr": [0, 1, 2, 3, 4], **payload}
         return self.request(
             "offline_download/task/list", 
             "POST", 
@@ -8407,7 +8764,7 @@ class P123Client(P123OpenClient):
     ) -> dict | Coroutine[Any, Any, dict]:
         """解析下载链接
 
-        POST https://www.123pan.com/api/offline_download/task/resolve
+        POST https://www.123pan.com/api/v2/offline_download/task/resolve
 
         :payload:
             - urls: str = <default> 💡 下载链接，多个用 "\\n" 隔开（用于新建链接下载任务）
@@ -8418,7 +8775,7 @@ class P123Client(P123OpenClient):
         elif not isinstance(payload, dict):
             payload = {"urls": "\n".join(payload)}
         return self.request(
-            "offline_download/task/resolve", 
+            "v2/offline_download/task/resolve", 
             "POST", 
             json=payload, 
             base_url=base_url, 
@@ -8426,12 +8783,12 @@ class P123Client(P123OpenClient):
             **request_kwargs, 
         )
 
-    # TODO: 支持接受一个 Iterable[dict | int]，int 视为 id （select_file 为 [0]），dict 视为 resolve 信息
     @overload
     def offline_task_submit(
         self, 
-        payload: dict, 
+        payload: dict | Iterable[dict], 
         /, 
+        upload_dir: None | int | str = None, 
         base_url: str | Callable[[], str] = DEFAULT_BASE_URL, 
         *, 
         async_: Literal[False] = False, 
@@ -8441,8 +8798,9 @@ class P123Client(P123OpenClient):
     @overload
     def offline_task_submit(
         self, 
-        payload: dict, 
+        payload: dict | Iterable[dict], 
         /, 
+        upload_dir: None | int | str = None, 
         base_url: str | Callable[[], str] = DEFAULT_BASE_URL, 
         *, 
         async_: Literal[True], 
@@ -8451,8 +8809,9 @@ class P123Client(P123OpenClient):
         ...
     def offline_task_submit(
         self, 
-        payload: dict, 
+        payload: dict | Iterable[dict], 
         /, 
+        upload_dir: None | int | str = None, 
         base_url: str | Callable[[], str] = DEFAULT_BASE_URL, 
         *, 
         async_: Literal[False, True] = False, 
@@ -8460,7 +8819,19 @@ class P123Client(P123OpenClient):
     ) -> dict | Coroutine[Any, Any, dict]:
         """提交离线下载任务
 
-        POST https://www.123pan.com/api/offline_download/task/submit
+        POST https://www.123pan.com/api/v2/offline_download/task/submit
+
+        .. note::
+            提交信息来自 ``client.offline_task_resolve()`` 接口的响应，假设响应为 ``resp``，那么
+
+            .. code:: python
+
+                payload = {
+                    "resource_list": [{
+                        "resource_id": resource["id"], 
+                        "select_file_id": [info["id"] for info in resource["files"]], 
+                    } for resource in resp["data"]["list"]]
+                }
 
         :payload:
             - resource_list: list[Task] 💡 资源列表
@@ -8468,14 +8839,24 @@ class P123Client(P123OpenClient):
                 .. code:: python
 
                     File = {
-                        "resource_id": int, 
-                        "select_file": list[int] # 如果是链接下载，则传 [0]，如果BT下载，则传需要下载的文件在列表中的索引的列表
+                        "resource_id": int,          # 资源 id
+                        "select_file_id": list[int], # 此资源内的文件 id
                     }
 
             - upload_dir: int 💡 保存到目录的 id
         """
+        if not isinstance(payload, dict):
+            payload = {
+                "resource_list": [{
+                    "resource_id": resource["id"], 
+                    "select_file_id": [info["id"] for info in resource["files"]], 
+                } for resource in payload]
+            }
+        payload = cast(dict, payload)
+        if upload_dir is not None:
+            payload["upload_dir"] = upload_dir
         return self.request(
-            "offline_download/task/submit", 
+            "v2/offline_download/task/submit", 
             "POST", 
             json=payload, 
             base_url=base_url, 
@@ -8530,6 +8911,76 @@ class P123Client(P123OpenClient):
             async_=async_, 
             **request_kwargs, 
         )
+
+    @overload
+    def offline_add(
+        self, 
+        /, 
+        url: str | Iterable[str], 
+        upload_dir: None | int | str = None, 
+        base_url: str | Callable[[], str] = DEFAULT_BASE_URL, 
+        *, 
+        async_: Literal[False] = False, 
+        **request_kwargs, 
+    ) -> dict:
+        ...
+    @overload
+    def offline_add(
+        self, 
+        /, 
+        url: str | Iterable[str], 
+        upload_dir: None | int | str = None, 
+        base_url: str | Callable[[], str] = DEFAULT_BASE_URL, 
+        *, 
+        async_: Literal[True], 
+        **request_kwargs, 
+    ) -> Coroutine[Any, Any, dict]:
+        ...
+    def offline_add(
+        self, 
+        /, 
+        url: str | Iterable[str], 
+        upload_dir: None | int | str = None, 
+        base_url: str | Callable[[], str] = DEFAULT_BASE_URL, 
+        *, 
+        async_: Literal[False, True] = False, 
+        **request_kwargs, 
+    ) -> dict | Coroutine[Any, Any, dict]:
+        """添加离线下载任务
+
+        POST https://www.123pan.com/api/offline_download/upload/seed
+
+        :param url: info_hash（只允许单个）、下载链接（多个用 "\n" 分隔）或者多个下载链接的迭代器
+        :param upload_dir: 保存到目录的 id
+        :param base_url: API 链接的基地址
+        :param async_: 是否异步
+        :param request_kwargs: 其它请求参数
+
+        :return: 接口响应信息
+        """
+        def gen_step():
+            if isinstance(url, str):
+                if len(url) == 40 and not url.strip(hexdigits):
+                    payload: dict = {"info_hash": url}
+                else:
+                    payload = {"urls": url}
+            else:
+                payload = {"urls": "\n".join(url)}
+            resp = yield self.offline_task_resolve(
+                payload, 
+                base_url=base_url, 
+                async_=async_, 
+                **request_kwargs, 
+            )
+            check_response(resp)
+            return self.offline_task_submit(
+                resp["data"]["list"], 
+                upload_dir, 
+                base_url=base_url, 
+                async_=async_, 
+                **request_kwargs, 
+            )
+        return run_gen_step(gen_step, async_)
 
     ########## Share API ##########
 
