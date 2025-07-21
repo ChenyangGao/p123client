@@ -359,7 +359,7 @@ print(get_downurl(client, "123://torrentgalaxy.db|1976025090|582aa8bfb0ad8e6f512
 
 ### 4. 直链服务
 
-需要先安装 [fastapi](https://pypi.org/project/blacksheep/)
+需要先安装 [blacksheep](https://www.neoteroi.dev/blacksheep/)
 
 ```console
 pip install 'blacksheep[uvicorn]'

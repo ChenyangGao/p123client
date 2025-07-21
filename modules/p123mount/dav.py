@@ -267,7 +267,7 @@ class P123FileSystemProvider(DAVProvider):
                 "Type": 1, 
             })
         scope = parts[0]
-        if len(parts) == 1 and scope in ("favicon.ico",):
+        if len(parts) == 1 and scope in ("favicon.ico", "service-worker.js"):
             return None
         if CRE_MAYBE_SHARE_match(scope):
             share_key, _, share_pwd = scope.partition(":")

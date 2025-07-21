@@ -505,7 +505,7 @@ class P123OpenClient:
         client_id: str = "", 
         client_secret: str = "", 
         replace: bool | Self = False, 
-        base_url: str | Callable[[], str] = DEFAULT_LOGIN_BASE_URL, 
+        base_url: str | Callable[[], str] = DEFAULT_OPEN_BASE_URL, 
         *, 
         async_: Literal[False] = False, 
         **request_kwargs, 
@@ -519,7 +519,7 @@ class P123OpenClient:
         client_id: str = "", 
         client_secret: str = "", 
         replace: bool | Self = False, 
-        base_url: str | Callable[[], str] = DEFAULT_LOGIN_BASE_URL, 
+        base_url: str | Callable[[], str] = DEFAULT_OPEN_BASE_URL, 
         *, 
         async_: Literal[True], 
         **request_kwargs, 
@@ -532,7 +532,7 @@ class P123OpenClient:
         client_id: str = "", 
         client_secret: str = "", 
         replace: bool | Self = False, 
-        base_url: str | Callable[[], str] = DEFAULT_LOGIN_BASE_URL, 
+        base_url: str | Callable[[], str] = DEFAULT_OPEN_BASE_URL, 
         *, 
         async_: Literal[False, True] = False, 
         **request_kwargs, 
@@ -674,7 +674,7 @@ class P123OpenClient:
         client_secret: str, 
         redirect_uri: str, 
         token: str, 
-        base_url: str | Callable[[], str] = DEFAULT_LOGIN_BASE_URL, 
+        base_url: str | Callable[[], str] = DEFAULT_OPEN_BASE_URL, 
         *, 
         async_: Literal[False] = False, 
         **request_kwargs, 
@@ -688,7 +688,7 @@ class P123OpenClient:
         client_secret: str, 
         redirect_uri: str, 
         token: str, 
-        base_url: str | Callable[[], str] = DEFAULT_LOGIN_BASE_URL, 
+        base_url: str | Callable[[], str] = DEFAULT_OPEN_BASE_URL, 
         *, 
         async_: Literal[True], 
         **request_kwargs, 
@@ -701,7 +701,7 @@ class P123OpenClient:
         client_secret: str, 
         redirect_uri: str, 
         token: str, 
-        base_url: str | Callable[[], str] = DEFAULT_LOGIN_BASE_URL, 
+        base_url: str | Callable[[], str] = DEFAULT_OPEN_BASE_URL, 
         *, 
         async_: Literal[False, True] = False, 
         **request_kwargs, 
@@ -745,7 +745,7 @@ class P123OpenClient:
         cls, 
         /, 
         refresh_token: str, 
-        base_url: str | Callable[[], str] = DEFAULT_LOGIN_BASE_URL, 
+        base_url: str | Callable[[], str] = DEFAULT_OPEN_BASE_URL, 
         *, 
         async_: Literal[False] = False, 
         **request_kwargs, 
@@ -756,7 +756,7 @@ class P123OpenClient:
         cls, 
         /, 
         refresh_token: str, 
-        base_url: str | Callable[[], str] = DEFAULT_LOGIN_BASE_URL, 
+        base_url: str | Callable[[], str] = DEFAULT_OPEN_BASE_URL, 
         *, 
         async_: Literal[True], 
         **request_kwargs, 
@@ -766,7 +766,7 @@ class P123OpenClient:
         cls, 
         /, 
         refresh_token: str, 
-        base_url: str | Callable[[], str] = DEFAULT_LOGIN_BASE_URL, 
+        base_url: str | Callable[[], str] = DEFAULT_OPEN_BASE_URL, 
         *, 
         async_: Literal[False, True] = False, 
         **request_kwargs, 
@@ -4425,6 +4425,125 @@ class P123OpenClient:
     ########## Upload API ##########
 
     @overload
+    def upload_complete(
+        self, 
+        payload: str | dict, 
+        /, 
+        base_url: str | Callable[[], str] = DEFAULT_OPEN_BASE_URL, 
+        *, 
+        async_: Literal[False] = False, 
+        **request_kwargs, 
+    ) -> dict:
+        ...
+    @overload
+    def upload_complete(
+        self, 
+        payload: str | dict, 
+        /, 
+        base_url: str | Callable[[], str] = DEFAULT_OPEN_BASE_URL, 
+        *, 
+        async_: Literal[True], 
+        **request_kwargs, 
+    ) -> Coroutine[Any, Any, dict]:
+        ...
+    def upload_complete(
+        self, 
+        payload: str | dict, 
+        /, 
+        base_url: str | Callable[[], str] = DEFAULT_OPEN_BASE_URL, 
+        *, 
+        async_: Literal[False, True] = False, 
+        **request_kwargs, 
+    ) -> dict | Coroutine[Any, Any, dict]:
+        """上传完毕
+
+        POST https://open-api.123pan.com/upload/v1/file/upload_complete
+
+        .. admonition:: Reference
+
+            /API列表/文件管理/上传/V1（旧）/上传完毕
+
+            https://123yunpan.yuque.com/org-wiki-123yunpan-muaork/cr6ced/hkdmcmvg437rfu6x
+
+        :payload:
+            - preuploadID: str 💡 预上传 id
+
+        :return:
+            返回的数据说明如下：
+
+            .. code:: python
+
+                {
+                    "async": bool, # 是否需要异步查询上传结果
+                    "completed": bool, # 上传是否完成
+                    "fileID": int, # 上传的文件 id
+                }
+        """
+        api = complete_url("/upload/v1/file/upload_complete", base_url)
+        if not isinstance(payload, dict):
+            payload = {"preuploadID": payload}
+        return self.request(api, "POST", json=payload, async_=async_, **request_kwargs)
+
+    @overload
+    def upload_complete_v2(
+        self, 
+        payload: str | dict, 
+        /, 
+        base_url: str | Callable[[], str] = DEFAULT_OPEN_BASE_URL, 
+        *, 
+        async_: Literal[False] = False, 
+        **request_kwargs, 
+    ) -> dict:
+        ...
+    @overload
+    def upload_complete_v2(
+        self, 
+        payload: str | dict, 
+        /, 
+        base_url: str | Callable[[], str] = DEFAULT_OPEN_BASE_URL, 
+        *, 
+        async_: Literal[True], 
+        **request_kwargs, 
+    ) -> Coroutine[Any, Any, dict]:
+        ...
+    def upload_complete_v2(
+        self, 
+        payload: str | dict, 
+        /, 
+        base_url: str | Callable[[], str] = DEFAULT_OPEN_BASE_URL, 
+        *, 
+        async_: Literal[False, True] = False, 
+        **request_kwargs, 
+    ) -> dict | Coroutine[Any, Any, dict]:
+        """上传完毕
+
+        POST https://open-api.123pan.com/upload/v2/file/upload_complete
+
+        .. admonition:: Reference
+
+            /API列表/文件管理/上传/V2（推荐）/上传完毕
+
+            https://123yunpan.yuque.com/org-wiki-123yunpan-muaork/cr6ced/fzzc5o8gok517720
+
+        :payload:
+            - preuploadID: str 💡 预上传 id
+
+        :return:
+            返回的数据说明如下：
+
+            .. code:: python
+
+                {
+                    "completed": bool, # 上传是否完成
+                    "fileID": int,     # 上传的文件 id
+                }
+        """
+        api = complete_url("/upload/v2/file/upload_complete", base_url)
+        if not isinstance(payload, dict):
+            payload = {"preuploadID": payload}
+        return self.request(api, "POST", json=payload, async_=async_, **request_kwargs)
+
+    @overload
     def upload_create(
         self, 
         payload: dict, 
@@ -4465,9 +4584,17 @@ class P123OpenClient:
             - 开发者上传单文件大小限制 10 GB
             - 不会重名
 
+        .. note::
+            /API列表/文件管理/上传/V1（旧）/💡上传流程说明
+
+            https://123yunpan.yuque.com/org-wiki-123yunpan-muaork/cr6ced/il16qi0opiel4889
+
+            1. 请求创建文件接口，接口返回的 "reuse" 为 "true" 时，表示秒传成功，上传结束。
+            2. 非秒传情况将会返回预上传ID ``preuploadID`` 与分片大小 ``sliceSize``，请将文件根据分片大小切分。            
+
         .. admonition:: Reference
 
-            /API列表/文件管理/上传/V1/创建文件
+            /API列表/文件管理/上传/V1（旧）/创建文件
 
             https://123yunpan.yuque.com/org-wiki-123yunpan-muaork/cr6ced/lrfuu3qe7q1ul8ig
 
@@ -4501,7 +4628,7 @@ class P123OpenClient:
         return self.request(api, "POST", json=payload, async_=async_, **request_kwargs)
 
     @overload
-    def upload_url(
+    def upload_create_v2(
         self, 
         payload: dict, 
         /, 
@@ -4512,7 +4639,7 @@ class P123OpenClient:
     ) -> dict:
         ...
     @overload
-    def upload_url(
+    def upload_create_v2(
         self, 
         payload: dict, 
         /, 
@@ -4522,7 +4649,7 @@ class P123OpenClient:
         **request_kwargs, 
     ) -> Coroutine[Any, Any, dict]:
         ...
-    def upload_url(
+    def upload_create_v2(
         self, 
         payload: dict, 
         /, 
@@ -4531,25 +4658,104 @@ class P123OpenClient:
         async_: Literal[False, True] = False, 
         **request_kwargs, 
     ) -> dict | Coroutine[Any, Any, dict]:
-        """获取上传地址&上传分片
+        """创建文件
 
-        POST https://open-api.123pan.com/upload/v1/file/get_upload_url
+        POST https://open-api.123pan.com/upload/v2/file/create
 
         .. note::
-            有多个分片时，轮流分别根据序号获取下载链接，然后 PUT 方法上传分片。由于上传链接会过期，所以没必要提前获取一大批
+            - 文件名要小于 256 个字符且不能包含以下字符：``"\\/:*?|><``
+            - 文件名不能全部是空格
+            - 开发者上传单文件大小限制 10 GB
+            - 不会重名
+
+        .. note::
+            /API列表/文件管理/上传/V2（推荐）/💡上传流程说明
+
+            https://123yunpan.yuque.com/org-wiki-123yunpan-muaork/cr6ced/xogi45g7okqk7svr#uqhyW
+
+            1. 调用创建文件接口，接口返回的 "reuse" 为 "true" 时，表示秒传成功，上传结束。
+            2. 非秒传情况将会返回预上传ID ``preuploadID`` 与分片大小 ``sliceSize``，请将文件根据分片大小切分。
+            3. 非秒传情况下返回 "servers" 为后续上传文件的对应域名（重要），多个任选其一。            
 
         .. admonition:: Reference
 
-            /API列表/文件管理/上传/V1/获取上传地址&上传分片
+            /API列表/文件管理/上传/V2（推荐）/创建文件
 
-            https://123yunpan.yuque.com/org-wiki-123yunpan-muaork/cr6ced/sonz9n085gnz0n3m
+            https://123yunpan.yuque.com/org-wiki-123yunpan-muaork/cr6ced/txow0iqviqsgotfl
+
+        :payload:
+            - containDir: "false" | "true" = "false" 💡 上传文件是否包含路径
+            - filename: str 💡 文件名，但 ``containDir`` 为 "true" 时，视为路径
+            - duplicate: 0 | 1 | 2 = 0 💡 处理同名：0: 跳过/报错 1: 保留/后缀编号 2: 替换/覆盖
+            - etag: str 💡 文件 md5
+            - parentFileID: int = 0 💡 父目录 id，根目录是 0
+            - size: int 💡 文件大小，单位：字节
+
+        :return:
+            返回的数据说明如下：
+
+            .. code:: python
+
+                {
+                    "fileID": str, # 上传后的文件 id。当已有相同 ``size`` 和 ``etag`` 的文件时，会发生秒传
+                    "preuploadID": str, # 预上传 id。当 ``reuse`` 为 "true" 时，该字段不存在
+                    "reuse": bool, # 是否秒传，返回 "true" 时表示文件已上传成功
+                    "sliceSize": int, # 分片大小，必须按此大小生成文件分片再上传。当 ``reuse`` 为 "true" 时，该字段不存在
+                    "servers": list[str], # 上传地址，多个任选其一
+                }
+        """
+        api = complete_url("/upload/v2/file/create", base_url)
+        payload = dict_to_lower_merge(payload, {
+            "parentFileId": 0, 
+            "containDir": "false", 
+        })
+        if "duplicate" in payload and not payload["duplicate"]:
+            del payload["duplicate"]
+        return self.request(api, "POST", json=payload, async_=async_, **request_kwargs)
+
+    @overload
+    def upload_domain(
+        self, 
+        /, 
+        base_url: str | Callable[[], str] = DEFAULT_OPEN_BASE_URL, 
+        *, 
+        async_: Literal[False] = False, 
+        **request_kwargs, 
+    ) -> dict:
+        ...
+    @overload
+    def upload_domain(
+        self, 
+        /, 
+        base_url: str | Callable[[], str] = DEFAULT_OPEN_BASE_URL, 
+        *, 
+        async_: Literal[True], 
+        **request_kwargs, 
+    ) -> Coroutine[Any, Any, dict]:
+        ...
+    def upload_domain(
+        self, 
+        /, 
+        base_url: str | Callable[[], str] = DEFAULT_OPEN_BASE_URL, 
+        *, 
+        async_: Literal[False, True] = False, 
+        **request_kwargs, 
+    ) -> dict | Coroutine[Any, Any, dict]:
+        """获取上传域名
+
+        GET https://open-api.123pan.com/upload/v2/file/domain
+
+        .. admonition:: Reference
+
+            /API列表/文件管理/上传/V2（推荐）/获取上传域名
+
+            https://123yunpan.yuque.com/org-wiki-123yunpan-muaork/cr6ced/agn8lolktbqie7p9
 
         :payload:
             - preuploadID: str 💡 预上传 id
-            - sliceNo: int     💡 分片序号，从 1 开始自增
         """
-        api = complete_url("/upload/v1/file/get_upload_url", base_url)
-        return self.request(api, "POST", json=payload, async_=async_, **request_kwargs)
+        api = complete_url("/upload/v2/file/domain", base_url)
+        return self.request(api, async_=async_, **request_kwargs)
 
     @overload
     def upload_list(
@@ -4591,7 +4797,7 @@ class P123OpenClient:
 
         .. admonition:: Reference
 
-            /API列表/文件管理/上传/V1/列举已上传分片（非必需）
+            /API列表/文件管理/上传/V1（旧）/列举已上传分片（非必需）
 
             https://123yunpan.yuque.com/org-wiki-123yunpan-muaork/cr6ced/dd28ws4bfn644cny
 
@@ -4599,66 +4805,6 @@ class P123OpenClient:
             - preuploadID: str 💡 预上传 id
         """
         api = complete_url("/upload/v1/file/list_upload_parts", base_url)
-        if not isinstance(payload, dict):
-            payload = {"preuploadID": payload}
-        return self.request(api, "POST", json=payload, async_=async_, **request_kwargs)
-
-    @overload
-    def upload_complete(
-        self, 
-        payload: str | dict, 
-        /, 
-        base_url: str | Callable[[], str] = DEFAULT_OPEN_BASE_URL, 
-        *, 
-        async_: Literal[False] = False, 
-        **request_kwargs, 
-    ) -> dict:
-        ...
-    @overload
-    def upload_complete(
-        self, 
-        payload: str | dict, 
-        /, 
-        base_url: str | Callable[[], str] = DEFAULT_OPEN_BASE_URL, 
-        *, 
-        async_: Literal[True], 
-        **request_kwargs, 
-    ) -> Coroutine[Any, Any, dict]:
-        ...
-    def upload_complete(
-        self, 
-        payload: str | dict, 
-        /, 
-        base_url: str | Callable[[], str] = DEFAULT_OPEN_BASE_URL, 
-        *, 
-        async_: Literal[False, True] = False, 
-        **request_kwargs, 
-    ) -> dict | Coroutine[Any, Any, dict]:
-        """上传完毕
-
-        POST https://open-api.123pan.com/upload/v1/file/upload_complete
-
-        .. admonition:: Reference
-
-            /API列表/文件管理/上传/V1/上传完毕
-
-            https://123yunpan.yuque.com/org-wiki-123yunpan-muaork/cr6ced/hkdmcmvg437rfu6x
-
-        :payload:
-            - preuploadID: str 💡 预上传 id
-
-        :return:
-            返回的数据说明如下：
-
-            .. code:: python
-
-                {
-                    "async": bool, # 是否需要异步查询上传结果
-                    "completed": bool, # 上传是否完成
-                    "fileID": int, # 上传的文件 id
-                }
-        """
-        api = complete_url("/upload/v1/file/upload_complete", base_url)
         if not isinstance(payload, dict):
             payload = {"preuploadID": payload}
         return self.request(api, "POST", json=payload, async_=async_, **request_kwargs)
@@ -4700,7 +4846,7 @@ class P123OpenClient:
 
         .. admonition:: Reference
 
-            /API列表/文件管理/上传/V1/异步轮询获取上传结果
+            /API列表/文件管理/上传/V1（旧）/异步轮询获取上传结果
 
             https://123yunpan.yuque.com/org-wiki-123yunpan-muaork/cr6ced/qgcosr6adkmm51h7
 
@@ -4722,7 +4868,220 @@ class P123OpenClient:
             payload = {"preuploadID": payload}
         return self.request(api, "POST", json=payload, async_=async_, **request_kwargs)
 
-    # TODO: 如果已经有 md5 和 大小，则先尝试直接上传，而不是打开文件
+    @overload
+    def upload_single(
+        self, 
+        payload: dict, 
+        /, 
+        file: Buffer | SupportsRead[Buffer] | Iterable[Buffer], 
+        base_url: str | Callable[[], str] = "https://openapi-upload.123242.com", 
+        *, 
+        async_: Literal[False] = False, 
+        **request_kwargs, 
+    ) -> dict:
+        ...
+    @overload
+    def upload_single(
+        self, 
+        payload: dict, 
+        /, 
+        file: Buffer | SupportsRead[Buffer] | Iterable[Buffer] | AsyncIterable[Buffer], 
+        base_url: str | Callable[[], str] = "https://openapi-upload.123242.com", 
+        *, 
+        async_: Literal[True], 
+        **request_kwargs, 
+    ) -> Coroutine[Any, Any, dict]:
+        ...
+    def upload_single(
+        self, 
+        payload: dict, 
+        /, 
+        file: Buffer | SupportsRead[Buffer] | Iterable[Buffer] | AsyncIterable[Buffer], 
+        base_url: str | Callable[[], str] = "https://openapi-upload.123242.com", 
+        *, 
+        async_: Literal[False, True] = False, 
+        **request_kwargs, 
+    ) -> dict | Coroutine[Any, Any, dict]:
+        """单步上传
+
+        POST https://open-api.123pan.com/upload/v2/file/single/create
+
+        .. note::
+            - 文件名要小于 256 个字符且不能包含以下任何字符：``"\\/:*?|><``
+            - 文件名不能全部是空格
+            - 请求头包含 ``Content-Type: multipart/form-data``
+            - 此接口限制开发者上传单文件大小为 1 GB
+            - 上传域名是 ``client.upload_domain_open`` 响应中的域名
+            - 此接口用于实现小文件单步上传一次 HTTP 请求交互即可完成上传
+
+        .. admonition:: Reference
+
+            /API列表/文件管理/上传/V2（推荐）/单步上传
+
+            https://123yunpan.yuque.com/org-wiki-123yunpan-muaork/cr6ced/xhiht1uh3yp92pzc
+
+        :payload:
+            - containDir: "false" | "true" = "false" 💡 上传文件是否包含路径
+            - filename: str 💡 文件名，但 ``containDir`` 为 "true" 时，视为路径
+            - duplicate: 0 | 1 | 2 = 0 💡 处理同名：0: 跳过/报错 1: 保留/后缀编号 2: 替换/覆盖
+            - etag: str 💡 文件 md5
+            - parentFileID: int = 0 💡 父目录 id，根目录是 0
+            - size: int 💡 文件大小，单位：字节
+            - file: Any 💡 分片二进制流（请单独传递 ``file`` 参数）
+
+        :return:
+            返回的数据说明如下：
+
+            .. code:: python
+
+                {
+                    "completed": bool, # 是否上传完成（如果 "completed" 为 "true" 时，则说明上传完成）
+                    "fileID": int, # 文件 ID。当 123 云盘已有该文件,则会发生秒传。此时会将文件 ID 字段返回。唯一
+                }
+        """
+        payload = dict_to_lower_merge(payload, {
+            "parentFileId": "0", 
+            "containDir": "false", 
+        })
+        if "duplicate" in payload and not payload["duplicate"]:
+            del payload["duplicate"]
+        for k, v in payload.items():
+            if not isinstance(v, str):
+                payload[k] = str(v)
+        if async_:
+            headers, request_kwargs["data"] = encode_multipart_data_async(payload, {"file": file})
+        else:
+            headers, request_kwargs["data"] = encode_multipart_data(payload, {"file": file}) # type: ignore
+        request_kwargs["headers"] = {**(request_kwargs.get("headers") or {}), **headers}
+        return self.request(
+            "/upload/v2/file/single/create", 
+            "POST", 
+            base_url=base_url, 
+            async_=async_, 
+            **request_kwargs, 
+        )
+
+    @overload
+    def upload_slice(
+        self, 
+        payload: dict, 
+        /, 
+        slice: Buffer | SupportsRead[Buffer] | Iterable[Buffer], 
+        base_url: str | Callable[[], str] = "https://openapi-upload.123242.com", 
+        *, 
+        async_: Literal[False] = False, 
+        **request_kwargs, 
+    ) -> dict:
+        ...
+    @overload
+    def upload_slice(
+        self, 
+        payload: dict, 
+        /, 
+        slice: Buffer | SupportsRead[Buffer] | Iterable[Buffer] | AsyncIterable[Buffer], 
+        base_url: str | Callable[[], str] = "https://openapi-upload.123242.com", 
+        *, 
+        async_: Literal[True], 
+        **request_kwargs, 
+    ) -> Coroutine[Any, Any, dict]:
+        ...
+    def upload_slice(
+        self, 
+        payload: dict, 
+        /, 
+        slice: Buffer | SupportsRead[Buffer] | Iterable[Buffer] | AsyncIterable[Buffer], 
+        base_url: str | Callable[[], str] = "https://openapi-upload.123242.com", 
+        *, 
+        async_: Literal[False, True] = False, 
+        **request_kwargs, 
+    ) -> dict | Coroutine[Any, Any, dict]:
+        """上传文件文件
+
+        POST https://open-api.123pan.com/upload/v2/file/slice
+
+        .. note::
+            - 上传域名是创建文件接口响应中的 "servers"
+            - 请求头包含 ``Content-Type: multipart/form-data``
+
+        .. admonition:: Reference
+
+            /API列表/文件管理/上传/V2（推荐）/上传分片
+
+            https://123yunpan.yuque.com/org-wiki-123yunpan-muaork/cr6ced/txow0iqviqsgotfl
+
+        :payload:
+            - preuploadID: str 💡 预上传ID
+            - sliceNo: int     💡 分片序号，从 1 开始自增
+            - sliceMD5: str    💡 当前分片 md5
+            - slice: Any       💡 分片二进制流（请单独传递 ``slice`` 参数）
+        """
+        payload["sliceNo"] = str(payload.get("sliceNo", 1))
+        if async_:
+            headers, request_kwargs["data"] = encode_multipart_data_async(payload, {"slice": slice})
+        else:
+            headers, request_kwargs["data"] = encode_multipart_data(payload, {"slice": slice}) # type: ignore
+        request_kwargs["headers"] = {**(request_kwargs.get("headers") or {}), **headers}
+        return self.request(
+            "/upload/v2/file/slice", 
+            "POST", 
+            base_url=base_url, 
+            async_=async_, 
+            **request_kwargs, 
+        )
+
+    @overload
+    def upload_url(
+        self, 
+        payload: dict, 
+        /, 
+        base_url: str | Callable[[], str] = DEFAULT_OPEN_BASE_URL, 
+        *, 
+        async_: Literal[False] = False, 
+        **request_kwargs, 
+    ) -> dict:
+        ...
+    @overload
+    def upload_url(
+        self, 
+        payload: dict, 
+        /, 
+        base_url: str | Callable[[], str] = DEFAULT_OPEN_BASE_URL, 
+        *, 
+        async_: Literal[True], 
+        **request_kwargs, 
+    ) -> Coroutine[Any, Any, dict]:
+        ...
+    def upload_url(
+        self, 
+        payload: dict, 
+        /, 
+        base_url: str | Callable[[], str] = DEFAULT_OPEN_BASE_URL, 
+        *, 
+        async_: Literal[False, True] = False, 
+        **request_kwargs, 
+    ) -> dict | Coroutine[Any, Any, dict]:
+        """获取上传地址&上传分片
+
+        POST https://open-api.123pan.com/upload/v1/file/get_upload_url
+
+        .. note::
+            有多个分片时，轮流分别根据序号获取下载链接，然后 PUT 方法上传分片。由于上传链接会过期，所以没必要提前获取一大批
+
+        .. admonition:: Reference
+
+            /API列表/文件管理/上传/V1（旧）/获取上传地址&上传分片
+
+            https://123yunpan.yuque.com/org-wiki-123yunpan-muaork/cr6ced/sonz9n085gnz0n3m
+
+        :payload:
+            - preuploadID: str 💡 预上传 id
+            - sliceNo: int     💡 分片序号，从 1 开始自增
+        """
+        api = complete_url("/upload/v1/file/get_upload_url", base_url)
+        return self.request(api, "POST", json=payload, async_=async_, **request_kwargs)
+
+    # TODO: 如果已经有 md5 和 大小，则先尝试直接上传，而不是打开文件，等确定不能妙传，再打开文件
+    # TODO: 支持 v2 接口，以及上传单个文件的接口（可以设定一个参数，是否优先用 upload_single，只要文件大小在 1 GB 内）
     @overload
     def upload_file(
         self, 
@@ -4785,7 +5144,7 @@ class P123OpenClient:
 
         .. admonition:: Reference
 
-            /API列表/文件管理/上传/v1/💡上传流程说明
+            /API列表/文件管理/上传/V1（旧）/💡上传流程说明
 
             https://123yunpan.yuque.com/org-wiki-123yunpan-muaork/cr6ced/il16qi0opiel4889
 
@@ -5150,10 +5509,15 @@ class P123OpenClient:
     transcode_upload_open = transcode_upload
     transcode_video_open = transcode_video
     upload_complete_open = upload_complete
+    upload_complete_v2_open = upload_complete_v2
     upload_create_open = upload_create
+    upload_create_v2_open = upload_create_v2
+    upload_domain_open = upload_domain
     upload_file_open = upload_file
     upload_list_open = upload_list
     upload_result_open = upload_result
+    upload_single_open = upload_single
+    upload_slice_open = upload_slice
     upload_url_open = upload_url
     user_info_open = user_info
 
@@ -9903,16 +10267,3 @@ with temp_globals():
             except KeyError:
                 CLIENT_API_METHODS_MAP[api] = [name]
 
-
-# TODO: 只有在使用密码登录的情况下，即使 token 失效，也可以重新登录（在有账号和密码的情况下，遇到 401 报错，会自动重新登录（需要加锁））
-# TODO: 新的上传方法需要封装：https://123yunpan.yuque.com/org-wiki-123yunpan-muaork/cr6ced/xogi45g7okqk7svr
-# TODO: 对于某些工具的接口封装，例如 重复文件清理
-# TODO: 同步空间
-# TODO: 直链空间
-# TODO: 图床
-# TODO: 视频转码
-# TODO: 移入保险箱
-# TODO: 申诉和申诉列表
-# TODO: 歌单（以及批量加入歌单）
-# TODO: 最近查看
-# TODO: 消息通知列表和操作
