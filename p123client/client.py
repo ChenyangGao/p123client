@@ -488,7 +488,7 @@ class P123OpenClient:
             request_kwargs["session"] = self.async_session if async_ else self.session
             request_kwargs["async_"] = async_
             request = get_default_request()
-        if self.can_relogin():
+        if self.check_for_relogin:
             headers = dict(self.headers)
             if request_headers := request_kwargs.get("headers"):
                 headers.update(request_headers)
@@ -526,8 +526,8 @@ class P123OpenClient:
                             if token != token_new:
                                 headers["authorization"] = "Bearer " + self.token
                                 continue
-                        if i:
-                            raise
+                        if i or not self.can_relogin():
+                            return resp
                         user_id = getattr(self, "user_id", None)
                         warn(f"relogin to refresh token: {user_id=}", category=P123Warning)
                         yield self.login(replace=True, async_=async_)
@@ -3823,7 +3823,12 @@ class P123OpenClient:
             - sharePwd: str = "" 💡 设置分享链接提取码
             - trafficLimit: int = <default> 💡 免登陆限制流量，单位：字节
             - trafficLimitSwitch: 1 | 2 = <default> 💡 免登录流量限制开关：1:关闭 2:打开
-            - trafficSwitch: 1 | 2 = <default> 💡 免登录流量包开关：1:关闭 2:打开
+            - trafficSwitch: 1 | 2 | 3 | 4 = <default> 💡 免登录流量包开关
+
+                - 1: 游客免登录提取（关） 超流量用户提取（关）
+                - 2: 游客免登录提取（开） 超流量用户提取（关）
+                - 3: 游客免登录提取（关） 超流量用户提取（开）
+                - 4: 游客免登录提取（开） 超流量用户提取（开）
         """
         api = complete_url("/api/v1/share/create", base_url)
         payload = dict_to_lower_merge(payload, {"shareExpire": 0, "sharePwd": ""})
@@ -3926,7 +3931,12 @@ class P123OpenClient:
             - shareIdList: list[int] 💡 分享链接 id 列表，最多 100 个
             - trafficLimit: int = <default> 💡 免登陆限制流量，单位：字节
             - trafficLimitSwitch: 1 | 2 = <default> 💡 免登录流量限制开关：1:关闭 2:打开
-            - trafficSwitch: 1 | 2 = <default> 💡 免登录流量包开关：1:关闭 2:打开
+            - trafficSwitch: 1 | 2 | 3 | 4 = <default> 💡 免登录流量包开关
+
+                - 1: 游客免登录提取（关） 超流量用户提取（关）
+                - 2: 游客免登录提取（开） 超流量用户提取（关）
+                - 3: 游客免登录提取（关） 超流量用户提取（开）
+                - 4: 游客免登录提取（开） 超流量用户提取（开）
         """
         api = complete_url("/api/v1/share/list/info", base_url)
         if not isinstance(payload, dict):
@@ -6270,6 +6280,105 @@ class P123Client(P123OpenClient):
         )
 
     @overload
+    def app_permission_delete(
+        self, 
+        payload: dict | str, 
+        /, 
+        base_url: str | Callable[[], str] = DEFAULT_BASE_URL, 
+        *, 
+        async_: Literal[False] = False, 
+        **request_kwargs, 
+    ) -> dict:
+        ...
+    @overload
+    def app_permission_delete(
+        self, 
+        payload: dict | str, 
+        /, 
+        base_url: str | Callable[[], str] = DEFAULT_BASE_URL, 
+        *, 
+        async_: Literal[True], 
+        **request_kwargs, 
+    ) -> Coroutine[Any, Any, dict]:
+        ...
+    def app_permission_delete(
+        self, 
+        payload: dict | str, 
+        /, 
+        base_url: str | Callable[[], str] = DEFAULT_BASE_URL, 
+        *, 
+        async_: Literal[False, True] = False, 
+        **request_kwargs, 
+    ) -> dict | Coroutine[Any, Any, dict]:
+        """第三方挂载工具登录授权列表
+
+        DELETE https://www.123pan.com/api/restful/goapi/v1/oauth2/app_permission
+
+        :payload:
+            - appId: str 💡 应用 id，也就是 ``client_id``
+        """
+        if not isinstance(payload, dict):
+            payload = {"appId": payload}
+        return self.request(
+            "restful/goapi/v1/oauth2/app_permission", 
+            "DELETE", 
+            params=payload, 
+            base_url=base_url, 
+            async_=async_, 
+            **request_kwargs, 
+        )
+
+    @overload
+    def app_permission_list(
+        self, 
+        payload: dict | int = 1, 
+        /, 
+        base_url: str | Callable[[], str] = DEFAULT_BASE_URL, 
+        *, 
+        async_: Literal[False] = False, 
+        **request_kwargs, 
+    ) -> dict:
+        ...
+    @overload
+    def app_permission_list(
+        self, 
+        payload: dict | int = 1, 
+        /, 
+        base_url: str | Callable[[], str] = DEFAULT_BASE_URL, 
+        *, 
+        async_: Literal[True], 
+        **request_kwargs, 
+    ) -> Coroutine[Any, Any, dict]:
+        ...
+    def app_permission_list(
+        self, 
+        payload: dict | int = 1, 
+        /, 
+        base_url: str | Callable[[], str] = DEFAULT_BASE_URL, 
+        *, 
+        async_: Literal[False, True] = False, 
+        **request_kwargs, 
+    ) -> dict | Coroutine[Any, Any, dict]:
+        """第三方挂载工具登录授权列表
+
+        GET https://www.123pan.com/api/restful/goapi/v1/oauth2/app_permission/list
+
+        :payload:
+            - page: int = 1 💡 第几页
+            - pageSize: int = 100 💡 分页大小
+        """
+        if not isinstance(payload, dict):
+            payload = {"page": payload}
+        payload.setdefault("pageSize", 100)
+        return self.request(
+            "restful/goapi/v1/oauth2/app_permission/list", 
+            params=payload, 
+            base_url=base_url, 
+            async_=async_, 
+            **request_kwargs, 
+        )
+
+    @overload
     @staticmethod
     def app_server_time(
         base_url: str | Callable[[], str] = DEFAULT_BASE_URL, 
@@ -6798,6 +6907,180 @@ class P123Client(P123OpenClient):
         )
 
     @overload
+    def fs_archive_list(
+        self, 
+        payload: dict | int | str, 
+        /, 
+        base_url: str | Callable[[], str] = DEFAULT_BASE_URL, 
+        *, 
+        async_: Literal[False] = False, 
+        **request_kwargs, 
+    ) -> dict:
+        ...
+    @overload
+    def fs_archive_list(
+        self, 
+        payload: dict | int | str, 
+        /, 
+        base_url: str | Callable[[], str] = DEFAULT_BASE_URL, 
+        *, 
+        async_: Literal[True], 
+        **request_kwargs, 
+    ) -> Coroutine[Any, Any, dict]:
+        ...
+    def fs_archive_list(
+        self, 
+        payload: dict | int | str, 
+        /, 
+        base_url: str | Callable[[], str] = DEFAULT_BASE_URL, 
+        *, 
+        async_: Literal[False, True] = False, 
+        **request_kwargs, 
+    ) -> dict | Coroutine[Any, Any, dict]:
+        """推送【云解压】任务
+
+        GET https://www.123pan.com/api/restful/goapi/v1/archive/file/list
+
+        .. note::
+            后台异步执行，任务结果请从 ``client.fs_archive_status()`` 接口获取
+
+        :payload:
+            - fileId: int | str 💡 压缩包的文件 id
+            - password: int | str = "" 💡 解压密码
+        """
+        if not isinstance(payload, dict):
+            payload = {"fileId": payload}
+        return self.request(
+            "restful/goapi/v1/archive/file/list", 
+            params=payload, 
+            base_url=base_url, 
+            async_=async_, 
+            **request_kwargs, 
+        )
+
+    @overload
+    def fs_archive_status(
+        self, 
+        payload: dict, 
+        /, 
+        base_url: str | Callable[[], str] = DEFAULT_BASE_URL, 
+        *, 
+        async_: Literal[False] = False, 
+        **request_kwargs, 
+    ) -> dict:
+        ...
+    @overload
+    def fs_archive_status(
+        self, 
+        payload: dict, 
+        /, 
+        base_url: str | Callable[[], str] = DEFAULT_BASE_URL, 
+        *, 
+        async_: Literal[True], 
+        **request_kwargs, 
+    ) -> Coroutine[Any, Any, dict]:
+        ...
+    def fs_archive_status(
+        self, 
+        payload: dict, 
+        /, 
+        base_url: str | Callable[[], str] = DEFAULT_BASE_URL, 
+        *, 
+        async_: Literal[False, True] = False, 
+        **request_kwargs, 
+    ) -> dict | Coroutine[Any, Any, dict]:
+        """推送云解压任务
+
+        GET https://www.123pan.com/api/restful/goapi/v1/archive/file/status
+
+        .. note::
+            响应结果中包含 "state" 字段，具体含义为
+
+            - 0: 未运行或不存在
+            - 1: 运行中
+            - 2: 成功
+            - 3: 失败
+
+        :payload:
+            - fileId: int | str 💡 压缩包的文件 id
+            - taskId: int | str 💡 任务 id
+            - taskType: int = <default> 💡 任务类型。目前已知：1:云解压 2:解压到
+        """
+        return self.request(
+            "restful/goapi/v1/archive/file/status", 
+            params=payload, 
+            base_url=base_url, 
+            async_=async_, 
+            **request_kwargs, 
+        )
+
+    @overload
+    def fs_archive_uncompress(
+        self, 
+        payload: dict, 
+        /, 
+        base_url: str | Callable[[], str] = DEFAULT_BASE_URL, 
+        *, 
+        async_: Literal[False] = False, 
+        **request_kwargs, 
+    ) -> dict:
+        ...
+    @overload
+    def fs_archive_uncompress(
+        self, 
+        payload: dict, 
+        /, 
+        base_url: str | Callable[[], str] = DEFAULT_BASE_URL, 
+        *, 
+        async_: Literal[True], 
+        **request_kwargs, 
+    ) -> Coroutine[Any, Any, dict]:
+        ...
+    def fs_archive_uncompress(
+        self, 
+        payload: dict, 
+        /, 
+        base_url: str | Callable[[], str] = DEFAULT_BASE_URL, 
+        *, 
+        async_: Literal[False, True] = False, 
+        **request_kwargs, 
+    ) -> dict | Coroutine[Any, Any, dict]:
+        """推送【解压到】任务
+
+        POST https://www.123pan.com/api/restful/goapi/v1/archive/file/uncompress
+
+        :payload:
+            - fileId: int | str           💡 压缩包的文件 id
+            - password: int | str = ""    💡 解压密码
+            - targetFileId: int | str = 0 💡 保存到的目录 id
+            - taskId: int                 💡 任务 id
+            - list: list[FileInfo]        💡 选择要解压的文件列表，信息来自 ``client.fs_archive_status()`` 接口的响应
+
+                .. code:: python
+
+                    FileInfo: {
+                        "fontId": str, 
+                        "fileName": str, 
+                        "parentFile": str, 
+                        "filePath": str, 
+                        "fileSize": int, 
+                        "fileType": 0 | 1, 
+                        "createTime": str, 
+                        "category": int, 
+                        "childFiles": None | list[FileInfo], 
+                    }
+        """
+        payload.setdefault("targetFileId", 0)
+        return self.request(
+            "restful/goapi/v1/archive/file/uncompress", 
+            "POST", 
+            json=payload, 
+            base_url=base_url, 
+            async_=async_, 
+            **request_kwargs, 
+        )
+
+    @overload
     def fs_copy(
         self, 
         payload: dict | int | str | Iterable[int | str], 
@@ -7019,6 +7302,9 @@ class P123Client(P123OpenClient):
         """获取某个 id 对应的祖先节点列表
 
         POST https://www.123pan.com/api/file/get_path
+
+        .. note::
+            随后你可以把这组祖先节点 id 传给 ``client.fs_info()`` 接口，即可获得具体的节点信息
 
         :payload:
             - fileId: int 💡 文件 id
@@ -8153,6 +8439,145 @@ class P123Client(P123OpenClient):
             **request_kwargs, 
         )
 
+    @overload
+    def fs_webdav_account_create(
+        self, 
+        payload: dict | str, 
+        /, 
+        base_url: str | Callable[[], str] = DEFAULT_BASE_URL, 
+        *, 
+        async_: Literal[False] = False, 
+        **request_kwargs, 
+    ) -> dict:
+        ...
+    @overload
+    def fs_webdav_account_create(
+        self, 
+        payload: dict | str, 
+        /, 
+        base_url: str | Callable[[], str] = DEFAULT_BASE_URL, 
+        *, 
+        async_: Literal[True], 
+        **request_kwargs, 
+    ) -> Coroutine[Any, Any, dict]:
+        ...
+    def fs_webdav_account_create(
+        self, 
+        payload: dict | str, 
+        /, 
+        base_url: str | Callable[[], str] = DEFAULT_BASE_URL, 
+        *, 
+        async_: Literal[False, True] = False, 
+        **request_kwargs, 
+    ) -> dict | Coroutine[Any, Any, dict]:
+        """WebDAV 添加应用
+
+        POST https://www.123pan.com/api/restful/goapi/v1/webdav/account/create
+
+        .. caution::
+            密码不能自己设置，只会自动生成
+
+        :payload:
+            - app: str 💡 应用名字
+        """
+        if not isinstance(payload, dict):
+            payload = {"app": payload}
+        return self.request(
+            "restful/goapi/v1/webdav/account/create", 
+            "POST", 
+            json=payload, 
+            base_url=base_url, 
+            async_=async_, 
+            **request_kwargs, 
+        )
+
+    @overload
+    def fs_webdav_account_delete(
+        self, 
+        payload: dict | int | str, 
+        /, 
+        base_url: str | Callable[[], str] = DEFAULT_BASE_URL, 
+        *, 
+        async_: Literal[False] = False, 
+        **request_kwargs, 
+    ) -> dict:
+        ...
+    @overload
+    def fs_webdav_account_delete(
+        self, 
+        payload: dict | int | str, 
+        /, 
+        base_url: str | Callable[[], str] = DEFAULT_BASE_URL, 
+        *, 
+        async_: Literal[True], 
+        **request_kwargs, 
+    ) -> Coroutine[Any, Any, dict]:
+        ...
+    def fs_webdav_account_delete(
+        self, 
+        payload: dict | int | str, 
+        /, 
+        base_url: str | Callable[[], str] = DEFAULT_BASE_URL, 
+        *, 
+        async_: Literal[False, True] = False, 
+        **request_kwargs, 
+    ) -> dict | Coroutine[Any, Any, dict]:
+        """WebDAV 删除应用（解除授权）
+
+        GET https://www.123pan.com/api/restful/goapi/v1/webdav/account/del
+
+        :payload:
+            - id: int | str 💡 应用 id
+        """
+        if not isinstance(payload, dict):
+            payload = {"id": payload}
+        return self.request(
+            "restful/goapi/v1/webdav/account/del", 
+            params=payload, 
+            base_url=base_url, 
+            async_=async_, 
+            **request_kwargs, 
+        )
+
+    @overload
+    def fs_webdav_account_list(
+        self, 
+        /, 
+        base_url: str | Callable[[], str] = DEFAULT_BASE_URL, 
+        *, 
+        async_: Literal[False] = False, 
+        **request_kwargs, 
+    ) -> dict:
+        ...
+    @overload
+    def fs_webdav_account_list(
+        self, 
+        /, 
+        base_url: str | Callable[[], str] = DEFAULT_BASE_URL, 
+        *, 
+        async_: Literal[True], 
+        **request_kwargs, 
+    ) -> Coroutine[Any, Any, dict]:
+        ...
+    def fs_webdav_account_list(
+        self, 
+        /, 
+        base_url: str | Callable[[], str] = DEFAULT_BASE_URL, 
+        *, 
+        async_: Literal[False, True] = False, 
+        **request_kwargs, 
+    ) -> dict | Coroutine[Any, Any, dict]:
+        """WebDAV 授权列表
+
+        GET https://www.123pan.com/api/restful/goapi/v1/webdav/account/list
+        """
+        return self.request(
+            "restful/goapi/v1/webdav/account/list", 
+            base_url=base_url, 
+            async_=async_, 
+            **request_kwargs, 
+        )
+
     ########## Qrcode API ##########
 
     @overload
@@ -9097,6 +9522,63 @@ class P123Client(P123OpenClient):
         )
 
     @overload
+    def share_commission_set(
+        self, 
+        payload: dict | int | str | Iterable[int | str], 
+        /, 
+        amount: int = 0, 
+        base_url: str | Callable[[], str] = DEFAULT_BASE_URL, 
+        *, 
+        async_: Literal[False] = False, 
+        **request_kwargs, 
+    ) -> dict:
+        ...
+    @overload
+    def share_commission_set(
+        self, 
+        payload: dict | int | str | Iterable[int | str], 
+        /, 
+        amount: int = 0, 
+        base_url: str | Callable[[], str] = DEFAULT_BASE_URL, 
+        *, 
+        async_: Literal[True], 
+        **request_kwargs, 
+    ) -> Coroutine[Any, Any, dict]:
+        ...
+    def share_commission_set(
+        self, 
+        payload: dict | int | str | Iterable[int | str], 
+        /, 
+        amount: int = 0, 
+        base_url: str | Callable[[], str] = DEFAULT_BASE_URL, 
+        *, 
+        async_: Literal[False, True] = False, 
+        **request_kwargs, 
+    ) -> dict | Coroutine[Any, Any, dict]:
+        """分佣设置
+
+        POST https://www.123pan.com/api/share/update
+
+        :payload:
+            - shareIds: int | str 💡 分享 id，多个用 "," 隔开
+            - noLoginStdAmount: int = 0  💡 文件体积单价（如果为 0 则是关闭），单位：1 分钱
+        """
+        if isinstance(payload, (int, str)):
+            payload = {"shareIds": payload}
+        elif not isinstance(payload, dict):
+            payload = {"ids": ",".join(map(str, payload))}
+        payload = cast(dict, payload)
+        payload.setdefault("noLoginStdAmount", amount)
+        return self.request(
+            "share/update", 
+            "POST", 
+            json=payload, 
+            base_url=base_url, 
+            async_=async_, 
+            **request_kwargs, 
+        )
+
+    @overload
     def share_create(
         self, 
         payload: dict | int | str | Iterable[int | str], 
@@ -9137,16 +9619,24 @@ class P123Client(P123OpenClient):
             - driveId: int = 0
             - event: str = "shareCreate" 💡 事件类型
             - expiration: "9999-12-31T23:59:59+08:00" 💡 有效期，日期用 ISO 格式
+            - fileNum: int = <default>   💡 文件数
+            - fillPwdSwitch: 0 | 1 = 1   💡 是否自动填充提取码
             - isPayShare: bool = False   💡 是否付费分享
             - isReward: 0 | 1 = 0        💡 是否开启打赏
             - payAmount: int = 0         💡 付费金额，单位：分
             - renameVisible: bool = False
             - resourceDesc: str = ""     💡 资源描述
+            - shareModality: int = <default>
             - shareName: str = <default> 💡 分享名称
             - sharePwd: str = ""         💡 分享密码
             - trafficLimit: int = 0      💡 流量限制额度，单位字节
             - trafficLimitSwitch: 1 | 2 = 1 💡 是否开启流量限制：1:关闭 2:开启
-            - trafficSwitch: 1 | 2 = 1      💡 是否开启免登录流量包：1:关闭 2:开启
+            - trafficSwitch: 1 | 2 | 3 | 4 = <default> 💡 免登录流量包开关
+
+                - 1: 游客免登录提取（关） 超流量用户提取（关）
+                - 2: 游客免登录提取（开） 超流量用户提取（关）
+                - 3: 游客免登录提取（关） 超流量用户提取（开）
+                - 4: 游客免登录提取（开） 超流量用户提取（开）
         """
         if isinstance(payload, (int, str)):
             payload = {"fileIdList": payload}
@@ -9157,6 +9647,7 @@ class P123Client(P123OpenClient):
             "driveId": 0, 
             "event": "shareCreate", 
             "expiration": "9999-12-31T23:59:59+08:00", 
+            "fillPwdSwitch": 1, 
             "isPayShare": False, 
             "isReward": 0, 
             "payAmount": 0, 
@@ -9693,7 +10184,7 @@ class P123Client(P123OpenClient):
 
         :payload:
             - ids: list[int | str] 💡 分享 id
-            - isReward: 0 | 1 = 1
+            - isReward: 0 | 1 = 1  💡 是否开启打赏
         """
         if isinstance(payload, (int, str)):
             payload = {"ids": [payload]}
@@ -9704,6 +10195,45 @@ class P123Client(P123OpenClient):
             "restful/goapi/v1/share/reward/status", 
             "POST", 
             json=payload, 
+            base_url=base_url, 
+            async_=async_, 
+            **request_kwargs, 
+        )
+
+    @overload
+    def share_traffic(
+        self, 
+        /, 
+        base_url: str | Callable[[], str] = DEFAULT_BASE_URL, 
+        *, 
+        async_: Literal[False] = False, 
+        **request_kwargs, 
+    ) -> dict:
+        ...
+    @overload
+    def share_traffic(
+        self, 
+        /, 
+        base_url: str | Callable[[], str] = DEFAULT_BASE_URL, 
+        *, 
+        async_: Literal[True], 
+        **request_kwargs, 
+    ) -> Coroutine[Any, Any, dict]:
+        ...
+    def share_traffic(
+        self, 
+        /, 
+        base_url: str | Callable[[], str] = DEFAULT_BASE_URL, 
+        *, 
+        async_: Literal[False, True] = False, 
+        **request_kwargs, 
+    ) -> dict | Coroutine[Any, Any, dict]:
+        """分享提取流量包的信息
+
+        GET https://www.123pan.com/api/share/traffic-info
+        """
+        return self.request(
+            "share/traffic-info", 
             base_url=base_url, 
             async_=async_, 
             **request_kwargs, 
@@ -9748,8 +10278,12 @@ class P123Client(P123OpenClient):
             - shareId: int | str
             - trafficLimit: int = <default>         💡 流量限制额度，单位字节
             - trafficLimitSwitch: 1 | 2 = <default> 💡 是否开启流量限制：1:关闭 2:开启
-            - trafficSwitch: 1 | 2 = <default>      💡 是否开启免登录流量包：1:关闭 2:开启
-            - ...
+            - trafficSwitch: 1 | 2 | 3 | 4 = <default> 💡 免登录流量包开关
+
+                - 1: 游客免登录提取（关） 超流量用户提取（关）
+                - 2: 游客免登录提取（开） 超流量用户提取（关）
+                - 3: 游客免登录提取（关） 超流量用户提取（开）
+                - 4: 游客免登录提取（开） 超流量用户提取（开）
         """
         return self.request(
             "restful/goapi/v1/share/info", 
@@ -10576,6 +11110,58 @@ class P123Client(P123OpenClient):
         )
 
     @overload
+    def user_modify_info(
+        self, 
+        payload: dict | str, 
+        /, 
+        base_url: str | Callable[[], str] = DEFAULT_BASE_URL, 
+        *, 
+        async_: Literal[False] = False, 
+        **request_kwargs, 
+    ) -> dict:
+        ...
+    @overload
+    def user_modify_info(
+        self, 
+        payload: dict | str, 
+        /, 
+        base_url: str | Callable[[], str] = DEFAULT_BASE_URL, 
+        *, 
+        async_: Literal[True], 
+        **request_kwargs, 
+    ) -> Coroutine[Any, Any, dict]:
+        ...
+    def user_modify_info(
+        self, 
+        payload: dict | str, 
+        /, 
+        base_url: str | Callable[[], str] = DEFAULT_BASE_URL, 
+        *, 
+        async_: Literal[False, True] = False, 
+        **request_kwargs, 
+    ) -> dict | Coroutine[Any, Any, dict]:
+        """修改用户信息，默认行为是 修改用户昵称
+
+        POST https://www.123pan.com/api/user/modify_info
+
+        :payload:
+            - event: str 💡 事件类型
+            - nickname: str = <default> 💡 用户昵称
+            - operateType: int = <default>
+            - ...
+        """
+        if not isinstance(payload, dict):
+            payload = {"nickname": payload, "event": "userDataOperate", "operateType": 2}
+        return self.request(
+            "user/modify_info", 
+            "POST", 
+            json=payload, 
+            base_url=base_url, 
+            async_=async_, 
+            **request_kwargs, 
+        )
+
+    @overload
     def user_referral_info(
         self, 
         /, 
@@ -10603,7 +11189,7 @@ class P123Client(P123OpenClient):
         async_: Literal[False, True] = False, 
         **request_kwargs, 
     ) -> dict | Coroutine[Any, Any, dict]:
-        """用户拉人头信息
+        """用户拉新返佣信息
 
         GET https://www.123pan.com/api/referral/my-info
         """

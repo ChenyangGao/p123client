@@ -32,11 +32,11 @@ parser = ArgumentParser(description="123 WebDav", formatter_class=RawTextHelpFor
 
 你可以随意指定一个有效的分享码和路径，而不用管这个分享是不是你自己创建的
 """)
-parser.add_argument("-u", "--user", default="", help="登录账号，手机号或邮箱")
-parser.add_argument("-p", "--password", default="", help="登录密码")
-parser.add_argument("-t", "--token", default="", help="123 网盘的 access_token")
-
+parser.add_argument("-u", "--user", default="", help="登录账号，手机号或邮箱，或者 client_id")
+parser.add_argument("-p", "--password", default="", help="登录密码，或者 client_secret")
+parser.add_argument("-t", "--token", help="123 网盘的 access_token 或 refresh_token")
 args = parser.parse_args()
+
 
 from datetime import datetime
 from re import compile as re_compile
@@ -56,7 +56,13 @@ CRE_MAYBE_SHARE_match = re_compile("[a-zA-Z0-9]{4,}-[a-zA-Z0-9]{4,}(?::.{4})?").
 INSTANCE_CACHE: LRUDict[str, FileResource | FolderResource] = LRUDict(65536)
 URL_CACHE: LRUDict[(str, int), str] = TLRUDict(1024)
 
-client = P123Client(passport=args.user, password=args.password, token=args.token)
+params: dict = {}
+if token := args.token:
+    if len(token) == 40:
+        params["refresh_token"] = token
+    else:
+        params["token"] = token
+client = P123Client(args.user, args.password, **params)
 
 
 class DavPathBase:
