@@ -1766,6 +1766,8 @@ class P123OpenClient:
         .. caution::
             此接口查询结果包含回收站的文件，需自行根据字段 ``trashed`` 判断处理
 
+            此接口不支持排序
+
         :payload:
             - businessType: int = <default> 💡 业务类型：2:转码空间
             - category: int = <default>     💡 分类代码：0:未知 1:音频 2:视频 3:图片 4:音频 5:其它 6:保险箱 7:收藏夹
@@ -1847,7 +1849,7 @@ class P123OpenClient:
                 - "create_at": 创建时间
                 - "update_at": 更新时间
                 - "share_id": 分享 id
-                - ...
+                - ...（其它可能值）
 
             - orderDirection: "asc" | "desc" = "asc" 💡 排序顺序
 
@@ -7418,22 +7420,16 @@ class P123Client(P123OpenClient):
         .. note::
             如果返回信息中，"Next" 字段的值为 "-1"，代表最后一页（无需再翻页查询）
 
+        .. caution::
+            返回信息中的 "Total" 字段固定为 0， 所以获取不了目录内的子节点数
+
         :payload:
             - driveId: int | str = 0
             - limit: int = 100 💡 分页大小，最多 100 个
             - next: int = 0    💡 下一批拉取开始的 id
-            - orderBy: str = "file_name" 💡 排序依据
-
-                - "file_id": 文件 id，也可以写作 "fileId"
-                - "file_name": 文件名
-                - "size":  文件大小
-                - "create_at": 创建时间
-                - "update_at": 更新时间
-                - "share_id": 分享 id
-                - ...
-
-            - orderDirection: "asc" | "desc" = "asc" 💡 排序顺序
-            - Page: int = <default> 💡 第几页，从 1 开始，可以是 0
+            - orderBy: str = "file_id" 💡 排序依据（⚠️ 不可用，固定等同于 "file_id"）
+            - orderDirection: "asc" | "desc" = "asc" 💡 排序顺序（⚠️ 固定等同于 "asc"，且填入 "desc" 会返回空列表）
+            - Page: int = <default> 💡 第几页，从 1 开始，可以是 0（⚠️ 不可用）
             - parentFileId: int | str = 0 💡 父目录 id
             - trashed: "false" | "true" = <default> 💡 是否查看回收站的文件
             - inDirectSpace: "false" | "true" = "false"
@@ -7453,7 +7449,6 @@ class P123Client(P123OpenClient):
             "driveId": 0, 
             "limit": 100, 
             "next": 0, 
-            "orderBy": "file_name", 
             "orderDirection": "asc", 
             "parentFileId": 0, 
             "inDirectSpace": "false", 
@@ -7511,10 +7506,16 @@ class P123Client(P123OpenClient):
 
         GET https://www.123pan.com/api/restful/goapi/v1/file/category/list-by-type
 
+        .. note::
+            如果返回信息中，"Next" 字段的值为 "-1"，代表最后一页（无需再翻页查询）
+
+        .. caution::
+            目前，返回信息中并无 "Total" 字段，所以不能直接知道文件总数
+
         :payload:
             - driveId: int | str = 0
             - limit: int = 100  💡 分页大小，最多 100 个
-            - next: int = 0     💡 下一批拉取开始的 id
+            - next: int = 0     💡 下一批拉取开始的 id（⚠️ 不可用）
             - category: int = 1 💡 分类代码
 
                 - 1: 音频
@@ -7522,8 +7523,6 @@ class P123Client(P123OpenClient):
                 - 3: 图片
                 - 4: 音频
                 - 5: 其它
-                - 6: 保险箱
-                - 7: 收藏夹
 
             - dateGranularity: int = <default> 💡 按时间分组展示
 
@@ -7533,15 +7532,11 @@ class P123Client(P123OpenClient):
     
             - orderBy: str = "file_name" 💡 排序依据
 
-                - "file_id": 文件 id，也可以写作 "fileId"
                 - "file_name":   文件名
                 - "size":        文件大小
                 - "create_at":   创建时间
                 - "update_at":   更新时间
-                - "trashed_at":  删除时间
-                - "share_id":    分享 id
-                - "remain_days": 剩余保留天数
-                - ...
+                - ...（其它可能值）
 
             - orderDirection: "asc" | "desc" = "asc" 💡 排序顺序
             - Page: int = 1 💡 第几页，从 1 开始
@@ -7635,8 +7630,8 @@ class P123Client(P123OpenClient):
         :payload:
             - driveId: int | str = 0
             - limit: int = 100 💡 分页大小，最多 100 个
-            - next: int = 0    💡 下一批拉取开始的 id
-            - orderBy: str = "file_name" 💡 排序依据
+            - next: int = 0    💡 下一批拉取开始的 id（⚠️ 不可用）
+            - orderBy: str = "file_id" 💡 排序依据
 
                 - "file_id": 文件 id，也可以写作 "fileId"
                 - "file_name":   文件名
@@ -7644,9 +7639,9 @@ class P123Client(P123OpenClient):
                 - "create_at":   创建时间
                 - "update_at":   更新时间
                 - "trashed_at":  删除时间
-                - "share_id":    分享 id
                 - "remain_days": 剩余保留天数
-                - ...
+                - "share_id":    分享 id
+                - ...（其它可能值）
 
             - orderDirection: "asc" | "desc" = "asc" 💡 排序顺序
             - Page: int = 1 💡 第几页，从 1 开始
@@ -7674,7 +7669,7 @@ class P123Client(P123OpenClient):
             "driveId": 0, 
             "limit": 100, 
             "next": 0, 
-            "orderBy": "file_name", 
+            "orderBy": "file_id", 
             "orderDirection": "asc", 
             "parentFileId": 0, 
             "inDirectSpace": "false", 
@@ -8120,7 +8115,7 @@ class P123Client(P123OpenClient):
                 - "trashed_at":  删除时间
                 - "share_id":    分享 id
                 - "remain_days": 剩余保留天数
-                - ...
+                - ...（其它可能值）
 
             - orderDirection: "asc" | "desc" = "asc" 💡 排序顺序
             - Page: int = 1 💡 第几页，从 1 开始
@@ -9957,18 +9952,21 @@ class P123Client(P123OpenClient):
         .. note::
             如果返回信息中，"Next" 字段的值为 "-1"，代表最后一页（无需再翻页查询）
 
+        .. note::
+            有个 Bug，如果 ``parentFileId`` 是你网盘中的某个目录的 id，则总是能拉取到，即便不在此分享中       
+
         :payload:
             - ShareKey: str 💡 分享码
             - SharePwd: str = <default> 💡 密码，如果没有就不用传
             - limit: int = 100 💡 分页大小，最多 100 个
-            - next: int = 0    💡 下一批拉取开始的 id
+            - next: int = 0    💡 下一批拉取开始的 id（⚠️ 不可用）
             - orderBy: str = "file_name" 💡 排序依据
 
                 - "file_name": 文件名
                 - "size":  文件大小
                 - "create_at": 创建时间
                 - "update_at": 更新时间
-                - ...
+                - ...（其它可能值）
 
             - orderDirection: "asc" | "desc" = "asc" 💡 排序顺序
             - Page: int = 1 💡 第几页，从 1 开始，可以是 0
@@ -11304,3 +11302,5 @@ with temp_globals():
             except KeyError:
                 CLIENT_API_METHODS_MAP[api] = [name]
 
+
+# TODO: 凡是可以填入 "false" 和 "true" 的参数，也支持填入 False 和 True
