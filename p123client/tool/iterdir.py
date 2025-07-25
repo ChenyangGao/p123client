@@ -2,17 +2,16 @@
 # encoding: utf-8
 
 __author__ = "ChenyangGao <https://chenyanggao.github.io>"
-__all__ = ["iterdir", "share_iterdir"]
+__all__ = ["iterdir", "share_iterdir", "share_iter"]
 
 from asyncio import sleep as async_sleep
 from collections import deque
 from collections.abc import AsyncIterator, Callable, Iterable, Iterator, Mapping
 from datetime import datetime
-from functools import partial
 from itertools import count
 from time import sleep, time
 from typing import overload, Any, Literal
-from urllib.parse import urlsplit
+from urllib.parse import parse_qsl, urlsplit
 
 from encode_uri import encode_uri_component_loose
 from iterutils import run_gen_step_iter, Yield
@@ -84,7 +83,7 @@ def _iterdir(
     :param parent_id: 父目录 id，默认是根目录
     :param min_depth: 最小深度，小于此深度的不会输出
     :param max_depth: 最大深度，大于此深度的不会输出，如果小于 0 则无限
-    :param predicate: 以文件或目录的信息作为参数进行调用，并以返回值作为筛选条件
+    :param predicate: 以迭代出的信息（是原始数据，而不是输出的数据）作为参数进行调用，并以返回值作为筛选条件
 
         - 如果返回值是 0 或 None，则跳过此节点以及位于此节点之下的所有节点
         - 如果返回值是 1，则输出此节点，但跳过位于此节点之下的所有节点
@@ -130,50 +129,69 @@ def _iterdir(
                 resp = yield fs_files(payload, async_=async_, **request_kwargs)
                 check_response(resp)
                 data = resp["data"]
-                if "fileList" in data:
-                    file_list = data["fileList"]
-                else:
-                    file_list = data["InfoList"]
+                total = get_first(data, "Total", "total", default=0)
+                file_list = get_first(data, "InfoList", "fileList", default=None)
                 if not file_list:
                     return
                 for info in file_list:
-                    attr    = dict(default_data or ())
-                    is_dir  = bool(get_first(info, "Type", "type"))
-                    fid     = int(get_first(info, "FileId", "fileID", "fileId", "fileid"))
-                    name    = get_first(info, "FileName", "filename")
-                    relpath = dirname + name
                     if predicate is None:
                         pred = True
                     else:
-                        pred = yield partial(predicate, info)
+                        pred = yield predicate(info)
                     if pred is None:
                         continue
-                    elif pred:
-                        if depth >= min_depth:
-                            attr["is_dir"] = is_dir
-                            attr["id"] = fid
-                            attr["name"] = name
-                            attr["parent_id"] = parent_id
-                            attr["relpath"] = relpath
-                            if not is_dir:
-                                name = encode_uri_component_loose(name, quote_slash=False)
-                                md5 = attr["md5"] = get_first(info, "Etag", "etag")
-                                size = attr["size"] = int(get_first(info, "Size", "size"))
-                                s3_key_flag = attr["s3keyflag"] = get_first(info, "S3KeyFlag", "s3KeyFlag", "s3keyflag")
-                                attr["uri"] = f"123://{name}|{size}|{md5}?{s3_key_flag}"
-                            if ctime := get_first(info, "CreateAt", "createAt", default=""):
-                                ctime = attr["ctime_datetime"] = datetime.fromisoformat(ctime)
-                                attr["ctime"] = int(ctime.timestamp())
-                            if mtime := get_first(info, "UpdateAt", "updateAt", default=""):
-                                mtime = attr["mtime_datetime"] = datetime.fromisoformat(mtime)
-                                attr["mtime"] = int(mtime.timestamp())
-                            if keep_raw:
-                                attr["raw"] = info
-                            yield Yield(attr)
-                        if pred is 1:
-                            continue
-                    if is_dir and (max_depth < 0 or depth < max_depth):
-                        put((depth, fid, relpath + "/"))
+                    attr = dict(default_data or ())
+                    if "ShareId" in info:
+                        if pred:
+                            attr.update({
+                                "share_id": info["ShareId"], 
+                                "share_key": info["ShareKey"], 
+                                "share_pwd": info["SharePwd"], 
+                                "share_name": info["ShareName"], 
+                                "file_id_list": list(map(int, info["FileIdList"].split(","))), 
+                            })
+                        if ctime := get_first(info, "CreateAt", "createAt", default=""):
+                            ctime = attr["ctime_datetime"] = datetime.fromisoformat(ctime)
+                            attr["ctime"] = int(ctime.timestamp())
+                        if mtime := get_first(info, "UpdateAt", "updateAt", default=""):
+                            mtime = attr["mtime_datetime"] = datetime.fromisoformat(mtime)
+                            attr["mtime"] = int(mtime.timestamp())
+                        if keep_raw:
+                            attr["raw"] = info
+                        yield Yield(attr)
+                    else:
+                        is_dir  = bool(get_first(info, "Type", "type"))
+                        fid     = int(get_first(info, "FileId", "fileID", "fileId", "fileid"))
+                        name    = get_first(info, "FileName", "filename")
+                        relpath = dirname + name
+                        if pred:
+                            if depth >= min_depth:
+                                if total:
+                                    attr["total_siblings"] = total
+                                attr["is_dir"] = is_dir
+                                attr["id"] = fid
+                                attr["name"] = name
+                                attr["parent_id"] = parent_id
+                                attr["relpath"] = relpath
+                                if not is_dir:
+                                    name = encode_uri_component_loose(name, quote_slash=False)
+                                    md5 = attr["md5"] = get_first(info, "Etag", "etag")
+                                    size = attr["size"] = int(get_first(info, "Size", "size"))
+                                    s3_key_flag = attr["s3keyflag"] = get_first(info, "S3KeyFlag", "s3KeyFlag", "s3keyflag")
+                                    attr["uri"] = f"123://{name}|{size}|{md5}?{s3_key_flag}"
+                                if ctime := get_first(info, "CreateAt", "createAt", default=""):
+                                    ctime = attr["ctime_datetime"] = datetime.fromisoformat(ctime)
+                                    attr["ctime"] = int(ctime.timestamp())
+                                if mtime := get_first(info, "UpdateAt", "updateAt", default=""):
+                                    mtime = attr["mtime_datetime"] = datetime.fromisoformat(mtime)
+                                    attr["mtime"] = int(mtime.timestamp())
+                                if keep_raw:
+                                    attr["raw"] = info
+                                yield Yield(attr)
+                            if pred is 1:
+                                continue
+                        if is_dir and (max_depth < 0 or depth < max_depth):
+                            put((depth, fid, relpath + "/"))
                 if (len(file_list) < page_size or 
                     data.get("Next") == "-1" or
                     data.get("lastFileId") == -1
@@ -238,7 +256,7 @@ def iterdir(
     :param payload: 父目录 id 或查询参数
     :param min_depth: 最小深度，小于此深度的不会输出
     :param max_depth: 最大深度，大于此深度的不会输出，如果小于 0 则无限
-    :param predicate: 以文件或目录的信息作为参数进行调用，并以返回值作为筛选条件
+    :param predicate: 以文件或目录的信息（是原始数据，而不是输出的数据）作为参数进行调用，并以返回值作为筛选条件
 
         - 如果返回值是 0 或 None，则跳过此节点以及位于此节点之下的所有节点
         - 如果返回值是 1，则输出此节点，但跳过位于此节点之下的所有节点
@@ -339,7 +357,12 @@ def share_iterdir(
         .. note::
             在分享链接中的位置形如 f"https://www.123pan.com/s/{share_key}"
 
-            如果携带提取码，要写成 f"https://www.123pan.com/s/{share_key}?提取码:{share_pwd}"
+            如果携带提取码，要写成
+
+                f"https://www.123pan.com/s/{share_key}?提取码:{share_pwd}"
+
+            或者
+                f"https://www.123pan.com/s/{share_key}?pwd={share_pwd}"
 
             上面的基地址不必是 "https://www.123pan.com"
 
@@ -347,7 +370,7 @@ def share_iterdir(
     :param payload: 父目录 id 或查询参数
     :param min_depth: 最小深度，小于此深度的不会输出
     :param max_depth: 最大深度，大于此深度的不会输出，如果小于 0 则无限
-    :param predicate: 以文件或目录的信息作为参数进行调用，并以返回值作为筛选条件
+    :param predicate: 以文件或目录的信息（是原始数据，而不是输出的数据）作为参数进行调用，并以返回值作为筛选条件
 
         - 如果返回值是 0 或 None，则跳过此节点以及位于此节点之下的所有节点
         - 如果返回值是 1，则输出此节点，但跳过位于此节点之下的所有节点
@@ -370,9 +393,15 @@ def share_iterdir(
         #     base_url = f"{urlp.scheme}://{urlp.netloc}"
         share_key = urlp.path.rsplit("/", 1)[-1]
         if not share_pwd:
-            share_pwd = urlp.query.rpartition(":")[-1]
-            if len(share_pwd) != 4:
-                share_pwd = ""
+            query = urlp.query
+            if "pwd=" in query:
+                for k, v in parse_qsl(query):
+                    if k == "pwd":
+                        share_pwd = v
+            if not share_pwd:
+                maybe_pwd = urlp.query.rpartition(":")[-1]
+                if len(maybe_pwd) == 4:
+                    share_pwd = maybe_pwd
     if share_key:
         payload["ShareKey"] = share_key
     else:
@@ -392,6 +421,63 @@ def share_iterdir(
         cooldown=cooldown, 
         base_url=base_url, 
         default_data=share_key_pwd, 
+        async_=async_, 
+        **request_kwargs, 
+    )
+
+
+@overload
+def share_iter(
+    client: P123Client, 
+    predicate: None | Callable[[dict], bool] = lambda info: not (info["Status"] or info["Expired"]), 
+    keep_raw: bool = True, 
+    cooldown: float = 0, 
+    base_url: None | str | Callable[[], str] = None, 
+    *, 
+    async_: Literal[False] = False, 
+    **request_kwargs, 
+) -> Iterator[dict]:
+    ...
+@overload
+def share_iter(
+    client: P123Client, 
+    predicate: None | Callable[[dict], bool] = lambda info: not (info["Status"] or info["Expired"]), 
+    keep_raw: bool = True, 
+    cooldown: float = 0, 
+    base_url: None | str | Callable[[], str] = None, 
+    *, 
+    async_: Literal[True], 
+    **request_kwargs, 
+) -> AsyncIterator[dict]:
+    ...
+def share_iter(
+    client: P123Client, 
+    predicate: None | Callable[[dict], bool] = lambda info: not (info["Status"] or info["Expired"]), 
+    keep_raw: bool = True, 
+    cooldown: float = 0, 
+    base_url: None | str | Callable[[], str] = None, 
+    *, 
+    async_: Literal[False, True] = False, 
+    **request_kwargs, 
+) -> Iterator[dict] | AsyncIterator[dict]:
+    """遍历用户的分享列表
+
+    :param client: 123 网盘的客户端对象
+    :param predicate: 以分享信息（是原始数据，而不是输出的数据）作为参数进行调用，并以返回值作为筛选条件
+    :param keep_raw: 是否保留原始数据，如果为 True，则会保存到 "raw" 字段
+    :param cooldown: 两次调用之间，冷却的时间（用两次调用开始时的时间差，而不是一次完成到下一次开始的时间差）
+    :param base_url: 基地址，如果为空，则用默认
+    :param async_: 是否异步
+    :param request_kwargs: 其它请求参数
+
+    :return: 迭代器，产生文件或目录的信息
+    """
+    return _iterdir(
+        client.share_list, 
+        predicate=predicate, 
+        keep_raw=keep_raw, 
+        cooldown=cooldown, 
+        base_url=base_url, 
         async_=async_, 
         **request_kwargs, 
     )

@@ -55,10 +55,16 @@ from .exception import (
 )
 
 
-# 默认使用的域名
-# "https://www.123pan.com"
-# "https://www.123pan.com/a"
-# "https://www.123pan.com/b"
+# 可以使用的域名（http 和 https 都可以，并可以加后缀 /a 或 /b，但加了后缀不一定可用（可能会报 401 错误））
+# https://123pan.com
+# https://123pan.cn
+# https://www.123pan.com
+# https://www.123pan.cn
+# https://login.123pan.com
+# https://www.123684.com
+# https://www.123865.com
+# https://www.123912.com
+# https://123912.com
 DEFAULT_BASE_URL: Final = "https://www.123pan.com/b"
 DEFAULT_LOGIN_BASE_URL: Final = "https://login.123pan.com"
 DEFAULT_OPEN_BASE_URL: Final = "https://open-api.123pan.com"
@@ -5800,7 +5806,10 @@ class P123Client(P123OpenClient):
                 if not self.token:
                     yield self.login(async_=async_, **request_kwargs)
             if not self.passport:
-                self.passport = self.token_user_info["username"]
+                try:
+                    self.passport = self.token_user_info["username"]
+                except (AttributeError, LookupError):
+                    pass
             self.check_for_relogin = check_for_relogin
             return self
         return run_gen_step(gen_step, async_)
@@ -5823,7 +5832,7 @@ class P123Client(P123OpenClient):
         refresh_token: str = "", 
         remember: bool = True, 
         platform: int = 0, 
-        base_url: str | Callable[[], str] = DEFAULT_BASE_URL, 
+        base_url: str | Callable[[], str] = DEFAULT_LOGIN_BASE_URL, 
         *, 
         async_: Literal[False] = False, 
         **request_kwargs, 
@@ -5840,7 +5849,7 @@ class P123Client(P123OpenClient):
         refresh_token: str = "", 
         remember: bool = True, 
         platform: int = 0, 
-        base_url: str | Callable[[], str] = DEFAULT_BASE_URL, 
+        base_url: str | Callable[[], str] = DEFAULT_LOGIN_BASE_URL, 
         *, 
         async_: Literal[True], 
         **request_kwargs, 
@@ -5856,7 +5865,7 @@ class P123Client(P123OpenClient):
         refresh_token: str = "", 
         remember: bool = True, 
         platform: int = 0, 
-        base_url: str | Callable[[], str] = DEFAULT_BASE_URL, 
+        base_url: str | Callable[[], str] = DEFAULT_LOGIN_BASE_URL, 
         *, 
         async_: Literal[False, True] = False, 
         **request_kwargs, 
@@ -8581,7 +8590,7 @@ class P123Client(P123OpenClient):
         payload: dict, 
         /, 
         request: None | Callable = None, 
-        base_url: str | Callable[[], str] = DEFAULT_BASE_URL, 
+        base_url: str | Callable[[], str] = DEFAULT_LOGIN_BASE_URL, 
         *, 
         async_: Literal[False] = False, 
         **request_kwargs, 
@@ -8593,7 +8602,7 @@ class P123Client(P123OpenClient):
         payload: dict, 
         /, 
         request: None | Callable = None, 
-        base_url: str | Callable[[], str] = DEFAULT_BASE_URL, 
+        base_url: str | Callable[[], str] = DEFAULT_LOGIN_BASE_URL, 
         *, 
         async_: Literal[True], 
         **request_kwargs, 
@@ -8604,7 +8613,7 @@ class P123Client(P123OpenClient):
         payload: dict, 
         /, 
         request: None | Callable = None, 
-        base_url: str | Callable[[], str] = DEFAULT_BASE_URL, 
+        base_url: str | Callable[[], str] = DEFAULT_LOGIN_BASE_URL, 
         *, 
         async_: Literal[False, True] = False, 
         **request_kwargs, 

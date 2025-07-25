@@ -2,7 +2,7 @@
 # encoding: utf-8
 
 __author__ = "ChenyangGao <https://chenyanggao.github.io>"
-__all__ = ["get_downurl"]
+__all__ = ["upload_uri"]
 
 from collections.abc import Coroutine
 
