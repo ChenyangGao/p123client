@@ -132,17 +132,17 @@ def _iterdir(
                 total = get_first(data, "Total", "total", default=0)
                 file_list = get_first(data, "InfoList", "fileList", default=None)
                 if not file_list:
-                    return
+                    break
                 for info in file_list:
                     if predicate is None:
                         pred = True
                     else:
                         pred = yield predicate(info)
-                    if pred is None:
+                    if pred is None or pred is 0:
                         continue
-                    attr = dict(default_data or ())
                     if "ShareId" in info:
                         if pred:
+                            attr = dict(default_data or ())
                             attr.update({
                                 "share_id": info["ShareId"], 
                                 "share_key": info["ShareKey"], 
@@ -150,15 +150,15 @@ def _iterdir(
                                 "share_name": info["ShareName"], 
                                 "file_id_list": list(map(int, info["FileIdList"].split(","))), 
                             })
-                        if ctime := get_first(info, "CreateAt", "createAt", default=""):
-                            ctime = attr["ctime_datetime"] = datetime.fromisoformat(ctime)
-                            attr["ctime"] = int(ctime.timestamp())
-                        if mtime := get_first(info, "UpdateAt", "updateAt", default=""):
-                            mtime = attr["mtime_datetime"] = datetime.fromisoformat(mtime)
-                            attr["mtime"] = int(mtime.timestamp())
-                        if keep_raw:
-                            attr["raw"] = info
-                        yield Yield(attr)
+                            if ctime := get_first(info, "CreateAt", "createAt", default=""):
+                                ctime = attr["ctime_datetime"] = datetime.fromisoformat(ctime)
+                                attr["ctime"] = int(ctime.timestamp())
+                            if mtime := get_first(info, "UpdateAt", "updateAt", default=""):
+                                mtime = attr["mtime_datetime"] = datetime.fromisoformat(mtime)
+                                attr["mtime"] = int(mtime.timestamp())
+                            if keep_raw:
+                                attr["raw"] = info
+                            yield Yield(attr)
                     else:
                         is_dir  = bool(get_first(info, "Type", "type"))
                         fid     = int(get_first(info, "FileId", "fileID", "fileId", "fileid"))
