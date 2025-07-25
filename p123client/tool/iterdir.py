@@ -28,7 +28,7 @@ def get_first(m: Mapping, *keys, default=undefined):
     raise KeyError(*keys)
 
 
-# TODO: _iterdir 支持广度优先遍历
+# TODO: _iterdir 支持深度优先遍历
 # TODO: 失败时，报错信息支持返回已经成功和未成功的列表，并且形式上也要利于断点重试
 @overload
 def _iterdir(
@@ -129,20 +129,29 @@ def _iterdir(
                 resp = yield fs_files(payload, async_=async_, **request_kwargs)
                 check_response(resp)
                 data = resp["data"]
-                total = get_first(data, "Total", "total", default=0)
                 file_list = get_first(data, "InfoList", "fileList", default=None)
                 if not file_list:
                     break
+                total: int = get_first(data, "Total", "total", default=0)
+                is_list_share = "ShareId" in file_list[0]
                 for info in file_list:
                     if predicate is None:
                         pred = True
                     else:
                         pred = yield predicate(info)
-                    if pred is None or pred is 0:
+                    if pred in (0, None):
                         continue
-                    if "ShareId" in info:
-                        if pred:
-                            attr = dict(default_data or ())
+                    if not is_list_share:
+                        is_dir  = bool(get_first(info, "Type", "type"))
+                        fid     = int(get_first(info, "FileId", "fileID", "fileId", "fileid"))
+                        name    = get_first(info, "FileName", "filename")
+                        relpath = dirname + name
+                        if is_dir and pred is not 1 and (max_depth < 0 or depth < max_depth):
+                            put((depth, fid, relpath + "/"))
+                        pred = pred and depth >= min_depth
+                    if pred:
+                        attr = dict(default_data or ())
+                        if is_list_share:
                             attr.update({
                                 "share_id": info["ShareId"], 
                                 "share_key": info["ShareKey"], 
@@ -150,48 +159,29 @@ def _iterdir(
                                 "share_name": info["ShareName"], 
                                 "file_id_list": list(map(int, info["FileIdList"].split(","))), 
                             })
-                            if ctime := get_first(info, "CreateAt", "createAt", default=""):
-                                ctime = attr["ctime_datetime"] = datetime.fromisoformat(ctime)
-                                attr["ctime"] = int(ctime.timestamp())
-                            if mtime := get_first(info, "UpdateAt", "updateAt", default=""):
-                                mtime = attr["mtime_datetime"] = datetime.fromisoformat(mtime)
-                                attr["mtime"] = int(mtime.timestamp())
-                            if keep_raw:
-                                attr["raw"] = info
-                            yield Yield(attr)
-                    else:
-                        is_dir  = bool(get_first(info, "Type", "type"))
-                        fid     = int(get_first(info, "FileId", "fileID", "fileId", "fileid"))
-                        name    = get_first(info, "FileName", "filename")
-                        relpath = dirname + name
-                        if pred:
-                            if depth >= min_depth:
-                                if total:
-                                    attr["total_siblings"] = total
-                                attr["is_dir"] = is_dir
-                                attr["id"] = fid
-                                attr["name"] = name
-                                attr["parent_id"] = parent_id
-                                attr["relpath"] = relpath
-                                if not is_dir:
-                                    name = encode_uri_component_loose(name, quote_slash=False)
-                                    md5 = attr["md5"] = get_first(info, "Etag", "etag")
-                                    size = attr["size"] = int(get_first(info, "Size", "size"))
-                                    s3_key_flag = attr["s3keyflag"] = get_first(info, "S3KeyFlag", "s3KeyFlag", "s3keyflag")
-                                    attr["uri"] = f"123://{name}|{size}|{md5}?{s3_key_flag}"
-                                if ctime := get_first(info, "CreateAt", "createAt", default=""):
-                                    ctime = attr["ctime_datetime"] = datetime.fromisoformat(ctime)
-                                    attr["ctime"] = int(ctime.timestamp())
-                                if mtime := get_first(info, "UpdateAt", "updateAt", default=""):
-                                    mtime = attr["mtime_datetime"] = datetime.fromisoformat(mtime)
-                                    attr["mtime"] = int(mtime.timestamp())
-                                if keep_raw:
-                                    attr["raw"] = info
-                                yield Yield(attr)
-                            if pred is 1:
-                                continue
-                        if is_dir and (max_depth < 0 or depth < max_depth):
-                            put((depth, fid, relpath + "/"))
+                        else:
+                            if total:
+                                attr["total_siblings"] = total
+                            attr["is_dir"] = is_dir
+                            attr["id"] = fid
+                            attr["name"] = name
+                            attr["parent_id"] = parent_id
+                            attr["relpath"] = relpath
+                            if not is_dir:
+                                name = encode_uri_component_loose(name, quote_slash=False)
+                                etag = attr["md5"] = get_first(info, "Etag", "etag")
+                                size = attr["size"] = int(get_first(info, "Size", "size"))
+                                s3_key_flag = attr["s3keyflag"] = get_first(info, "S3KeyFlag", "s3KeyFlag", "s3keyflag")
+                                attr["uri"] = f"123://{name}|{size}|{etag}?{s3_key_flag}"
+                        if ctime := get_first(info, "CreateAt", "createAt", default=""):
+                            ctime = attr["ctime_datetime"] = datetime.fromisoformat(ctime)
+                            attr["ctime"] = int(ctime.timestamp())
+                        if mtime := get_first(info, "UpdateAt", "updateAt", default=""):
+                            mtime = attr["mtime_datetime"] = datetime.fromisoformat(mtime)
+                            attr["mtime"] = int(mtime.timestamp())
+                        if keep_raw:
+                            attr["raw"] = info
+                        yield Yield(attr)
                 if (len(file_list) < page_size or 
                     data.get("Next") == "-1" or
                     data.get("lastFileId") == -1
