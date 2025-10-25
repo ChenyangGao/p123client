@@ -1,0 +1,45 @@
+[tool.poetry]
+name = "p123dav"
+version = "0.0.3.1"
+description = "123 WebDAV"
+authors = ["ChenyangGao <wosiwujm@gmail.com>"]
+license = "MIT"
+readme = "readme.md"
+homepage = "https://github.com/ChenyangGao/p123client/tree/main/modules/p123dav"
+repository = "https://github.com/ChenyangGao/p123client/tree/main/modules/p123dav"
+keywords = ["python-123", "webdav"]
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Development Status :: 5 - Production/Stable",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3 :: Only",
+    "Operating System :: OS Independent",
+    "Intended Audience :: Developers",
+    "Topic :: Software Development",
+    "Topic :: Software Development :: Libraries",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+include = [
+    "LICENSE",
+]
+
+[tool.poetry.dependencies]
+python = "^3.12"
+cachedict = ">=0.0.3"
+cheroot = "*"
+p123client = ">=0.0.8.5"
+python-property = ">=0.0.3"
+WsgiDAV = "*"
+
+[tool.poetry.scripts]
+p123dav = "p123dav.__main__:main"
+123dav = "p123dav.__main__:main"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[[tool.poetry.packages]]
+include = "p123dav"
