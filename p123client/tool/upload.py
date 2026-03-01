@@ -10,7 +10,7 @@ from typing import Literal
 from typing import overload, Any, Literal
 from urllib.parse import unquote
 
-from p123client import P123Client
+from ..client import P123Client
 
 
 @overload

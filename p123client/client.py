@@ -7154,7 +7154,7 @@ class P123Client(P123OpenClient):
     @overload
     def download_url(
         self, 
-        payload: dict | int | str, 
+        payload: dict | int | str | tuple[str, int] | tuple[str, int, str], 
         /, 
         *, 
         async_: Literal[False] = False, 
@@ -7164,7 +7164,7 @@ class P123Client(P123OpenClient):
     @overload
     def download_url(
         self, 
-        payload: dict | int | str, 
+        payload: dict | int | str | tuple[str, int] | tuple[str, int, str], 
         /, 
         *, 
         async_: Literal[True], 
@@ -7173,7 +7173,7 @@ class P123Client(P123OpenClient):
         ...
     def download_url(
         self, 
-        payload: dict | int | str, 
+        payload: dict | int | str | tuple[str, int] | tuple[str, int, str], 
         /, 
         *, 
         async_: Literal[False, True] = False, 
@@ -7185,10 +7185,12 @@ class P123Client(P123OpenClient):
             ``payload`` 支持多种格式的输入，按下面的规则按顺序进行判断：
 
             1. 如果是 ``int`` 或 ``str``，则视为文件 id，必须在你的网盘中存在此文件
-            2. 如果是 ``dict`` （不区分大小写），有 "S3KeyFlag", "Etag" 和 "Size" 的值，则直接获取链接，文件不必在你网盘中
-            3. 如果是 ``dict`` （不区分大小写），有 "Etag" 和 "Size" 的值，则会先秒传（临时文件路径为 /.tempfile）再获取链接，文件不必在你网盘中
-            4. 如果是 ``dict`` （不区分大小写），有 "FileID"，则会先获取信息，再获取链接，必须在你的网盘中存在此文件
-            5. 否则会报错 ValueError
+            2. 如果是 ``tuple[str, int]``，视为 ("Etag" 或者文件的 ``sha1``, "Size") 的组合，则会先秒传（临时文件路径为 /.tempfile）再获取链接，文件不必在你网盘中
+            3. 如果是 ``tuple[str, int, str]``，视为 ("Etag", "Size", "S3KeyFlag") 的组合，则直接获取链接，文件不必在你网盘中
+            4. 如果是 ``dict`` （不区分大小写），有 "S3KeyFlag", "Etag" 和 "Size" 的值，则直接获取链接，文件不必在你网盘中
+            5. 如果是 ``dict`` （不区分大小写），有 "Etag" 和 "Size" 的值，则会先秒传（临时文件路径为 /.tempfile）再获取链接，文件不必在你网盘中
+            6. 如果是 ``dict`` （不区分大小写），有 "FileID"，则会先获取信息，再获取链接，必须在你的网盘中存在此文件
+            7. 否则会报错 ValueError
 
         :param payload: 文件 id 或者文件信息，文件信息必须包含的信息如下：
 
@@ -7205,6 +7207,29 @@ class P123Client(P123OpenClient):
         """
         def gen_step():
             nonlocal payload
+            if isinstance(payload, tuple):
+                if len(payload) == 2:
+                    hashval, size = payload
+                    if len(hashval) == 40:
+                        resp = yield self.upload_sha1_reuse(
+                            {
+                                "sha1": hashval, 
+                                "size": size, 
+                                "filename": ".tempfile", 
+                                "duplicate": 2, 
+                            }, 
+                            async_=async_, 
+                            **request_kwargs, 
+                        )
+                        check_response(resp)
+                        if not resp["data"]["reuse"]:
+                            raise P123OSError(errno.ENOENT, resp)
+                        payload = resp["data"]["fileID"]
+                    else:
+                        payload = {"etag": hashval, "size": size}
+                else:
+                    payload = {"etag": payload[0], "size": payload[1], "s3keyflag": payload[2]}
+                payload = cast(dict | int | str, payload)
             if isinstance(payload, dict):
                 payload = dict_map(payload, key=str.lower)
                 if not ("size" in payload and "etag" in payload):
@@ -7242,14 +7267,13 @@ class P123Client(P123OpenClient):
                 )
                 check_response(resp)
                 return resp["data"]["DownloadUrl"]
-            else:
-                resp = yield self.download_info_open(
-                    payload, 
-                    async_=async_, 
-                    **request_kwargs, 
-                )
-                check_response(resp)
-                return resp["data"]["downloadUrl"]
+            resp = yield self.download_info_open(
+                payload, 
+                async_=async_, 
+                **request_kwargs, 
+            )
+            check_response(resp)
+            return resp["data"]["downloadUrl"]
         return run_gen_step(gen_step, async_)
 
     ########## File System API ##########

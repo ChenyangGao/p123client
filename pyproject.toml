@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "p123client"
-version = "0.0.9.3"
+version = "0.0.9.3.1"
 description = "Python 123 webdisk client."
 authors = ["ChenyangGao <wosiwujm@gmail.com>"]
 license = "MIT"

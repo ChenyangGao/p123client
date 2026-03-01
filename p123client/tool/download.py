@@ -14,7 +14,8 @@ from urllib.parse import unquote
 
 from encode_uri import encode_uri_component_loose
 from iterutils import run_gen_step
-from p123client import check_response, P123Client
+
+from ..client import check_response, P123Client
 
 
 @overload

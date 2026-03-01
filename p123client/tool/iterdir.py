@@ -15,8 +15,9 @@ from urllib.parse import parse_qsl, urlsplit
 
 from encode_uri import encode_uri_component_loose
 from iterutils import run_gen_step_iter, Yield
-from p123client import check_response, P123Client
 from undefined import undefined
+
+from ..client import check_response, P123Client
 
 
 def get_first(m: Mapping, *keys, default=undefined):
