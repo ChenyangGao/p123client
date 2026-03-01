@@ -14,6 +14,7 @@ from collections.abc import (
     Iterable, MutableMapping, 
 )
 from contextlib import contextmanager
+from datetime import datetime
 from functools import partial
 from hashlib import md5
 from http.cookiejar import CookieJar
@@ -429,6 +430,7 @@ class P123OpenClient:
         method: str = "GET", 
         request: None | Callable = None, 
         base_url: str | Callable[[], str] = DEFAULT_BASE_URL, 
+        headers = None, 
         async_: Literal[False, True] = False, 
         **request_kwargs, 
     ):
@@ -441,28 +443,26 @@ class P123OpenClient:
             request_kwargs["session"] = self.async_session if async_ else self.session
             request_kwargs["async_"] = async_
             request = get_default_request()
-        if self.check_for_relogin:
-            headers = dict(self.headers)
-            if request_headers := request_kwargs.get("headers"):
-                headers.update(request_headers)
-            headers.setdefault("authorization", "")
-            request_kwargs["headers"] = headers
-        else:
+        request_headers = dict(self.headers)
+        if isinstance(headers, str):
+            request_headers["platform"] = headers
+        elif headers:
+            request_headers.update(headers)
+        request_kwargs["headers"] = request_headers
+        if not self.check_for_relogin:
             return request(
                 url=url, 
                 method=method, 
                 **request_kwargs, 
             )
+        request_headers.setdefault("authorization", "")
         def gen_step():
             if async_:
                 lock: Lock | AsyncLock = self.request_alock
             else:
                 lock = self.request_lock
-            headers = request_kwargs["headers"]
-            if "authorization" not in headers:
-                headers["authorization"] = "Bearer " + self.token
             for i in count(0):
-                token = headers["authorization"].removeprefix("Bearer ")
+                token = request_headers["authorization"].removeprefix("Bearer ")
                 resp = yield cast(Callable, request)(
                     url=url, 
                     method=method, 
@@ -477,16 +477,16 @@ class P123OpenClient:
                         if self.__dict__.get("token_path"):
                             token_new = self._read_token() or ""
                             if token != token_new:
-                                headers["authorization"] = "Bearer " + self.token
+                                request_headers["authorization"] = "Bearer " + self.token
                                 continue
                         if i or not self.can_relogin():
                             return resp
                         user_id = getattr(self, "user_id", None)
                         warn(f"relogin to refresh token: {user_id=}", category=P123Warning)
                         yield self.login(replace=True, async_=async_)
-                        headers["authorization"] = "Bearer " + self.token
+                        request_headers["authorization"] = "Bearer " + self.token
                     else:
-                        headers["authorization"] = "Bearer " + token_new
+                        request_headers["authorization"] = "Bearer " + token_new
                 finally:
                     lock.release()
         return run_gen_step(gen_step, async_)
@@ -1503,6 +1503,186 @@ class P123OpenClient:
     ########## File System API ##########
 
     @overload
+    def fs_copy(
+        self, 
+        payload: dict | int | str | Iterable[int | str], 
+        /, 
+        parent_id: int | str = 0, 
+        base_url: str | Callable[[], str] = DEFAULT_OPEN_BASE_URL, 
+        *, 
+        async_: Literal[False] = False, 
+        **request_kwargs, 
+    ) -> dict:
+        ...
+    @overload
+    def fs_copy(
+        self, 
+        payload: dict | int | str | Iterable[int | str], 
+        /, 
+        parent_id: int | str = 0, 
+        base_url: str | Callable[[], str] = DEFAULT_OPEN_BASE_URL, 
+        *, 
+        async_: Literal[True], 
+        **request_kwargs, 
+    ) -> Coroutine[Any, Any, dict]:
+        ...
+    def fs_copy(
+        self, 
+        payload: dict | int | str | Iterable[int | str], 
+        /, 
+        parent_id: int | str = 0, 
+        base_url: str | Callable[[], str] = DEFAULT_OPEN_BASE_URL, 
+        *, 
+        async_: Literal[False, True] = False, 
+        **request_kwargs, 
+    ) -> dict | Coroutine[Any, Any, dict]:
+        """批量复制文件
+
+        POST https://open-api.123pan.com/api/v1/file/async/copy
+
+        .. admonition:: Reference
+
+            /API列表/文件管理/复制/批量复制文件
+
+            https://123yunpan.yuque.com/org-wiki-123yunpan-muaork/cr6ced/pik0i4lvxw4lkkc7
+
+        :payload:
+            - fileIDs: list[int] 💡 文件 id 列表，单级最多支持 3000 个
+            - targetDirId: int = 0 💡 要复制到的目标文件夹 id
+
+        :return:
+            返回的数据说明如下：
+
+            .. code:: python
+
+                {
+                    "taskId": int, # 任务 id，后续用来查询任务进度
+                }
+        """
+        api = complete_url("/api/v1/file/async/copy", base_url)
+        if not isinstance(payload, dict):
+            if isinstance(payload, (int, str)):
+                payload = [payload]
+            elif not isinstance(payload, (tuple, list)):
+                payload = list(payload)
+            payload = {"fileIDs": payload}
+        payload = dict_key_to_lower_merge(payload, targetDirId=parent_id)
+        return self.request(api, "POST", json=payload, async_=async_, **request_kwargs)
+
+    @overload
+    def fs_copy_one(
+        self, 
+        payload: dict | int | str, 
+        /, 
+        parent_id: int | str = 0, 
+        base_url: str | Callable[[], str] = DEFAULT_OPEN_BASE_URL, 
+        *, 
+        async_: Literal[False] = False, 
+        **request_kwargs, 
+    ) -> dict:
+        ...
+    @overload
+    def fs_copy_one(
+        self, 
+        payload: dict | int | str, 
+        /, 
+        parent_id: int | str = 0, 
+        base_url: str | Callable[[], str] = DEFAULT_OPEN_BASE_URL, 
+        *, 
+        async_: Literal[True], 
+        **request_kwargs, 
+    ) -> Coroutine[Any, Any, dict]:
+        ...
+    def fs_copy_one(
+        self, 
+        payload: dict | int | str, 
+        /, 
+        parent_id: int | str = 0, 
+        base_url: str | Callable[[], str] = DEFAULT_OPEN_BASE_URL, 
+        *, 
+        async_: Literal[False, True] = False, 
+        **request_kwargs, 
+    ) -> dict | Coroutine[Any, Any, dict]:
+        """复制单个文件
+
+        POST https://open-api.123pan.com/api/v1/file/copy
+
+        .. admonition:: Reference
+
+            /API列表/文件管理/复制/复制单个文件
+
+            https://123yunpan.yuque.com/org-wiki-123yunpan-muaork/cr6ced/thpz0w9er500pob9
+
+        :payload:
+            - fileId: int 💡 文件 id
+            - targetDirId: int = 0 💡 要复制到的目标文件夹 id
+        """
+        api = complete_url("/api/v1/file/copy", base_url)
+        if not isinstance(payload, dict):
+            payload = {"fileId": payload}
+        payload = dict_key_to_lower_merge(payload, targetDirId=parent_id)
+        return self.request(api, "POST", json=payload, async_=async_, **request_kwargs)
+
+    @overload
+    def fs_copy_process(
+        self, 
+        payload: dict | int | str, 
+        /, 
+        base_url: str | Callable[[], str] = DEFAULT_OPEN_BASE_URL, 
+        *, 
+        async_: Literal[False] = False, 
+        **request_kwargs, 
+    ) -> dict:
+        ...
+    @overload
+    def fs_copy_process(
+        self, 
+        payload: dict | int | str, 
+        /, 
+        base_url: str | Callable[[], str] = DEFAULT_OPEN_BASE_URL, 
+        *, 
+        async_: Literal[True], 
+        **request_kwargs, 
+    ) -> Coroutine[Any, Any, dict]:
+        ...
+    def fs_copy_process(
+        self, 
+        payload: dict | int | str, 
+        /, 
+        base_url: str | Callable[[], str] = DEFAULT_OPEN_BASE_URL, 
+        *, 
+        async_: Literal[False, True] = False, 
+        **request_kwargs, 
+    ) -> dict | Coroutine[Any, Any, dict]:
+        """批量复制文件进度
+
+        GET https://open-api.123pan.com/api/v1/file/async/copy/process
+
+        .. admonition:: Reference
+
+            /API列表/文件管理/复制/批量复制文件进度
+
+            https://123yunpan.yuque.com/org-wiki-123yunpan-muaork/cr6ced/fqh9vk1esg4uomly
+
+        :payload:
+            - taskId: int 💡 任务 id
+
+        :return:
+            返回的数据说明如下：
+
+            .. code:: python
+
+                {
+                    "taskId": int, # 任务 id
+                    "status": int, # 任务状态：0-待处理 1-进行中 2-已完成 3-失败
+                }
+        """
+        api = complete_url("/api/v1/file/async/copy/process", base_url)
+        if not isinstance(payload, dict):
+            payload = {"taskId": payload}
+        return self.request(api, params=payload, async_=async_, **request_kwargs)
+
+    @overload
     def fs_delete(
         self, 
         payload: dict | int | str | Iterable[int | str], 
@@ -1727,7 +1907,7 @@ class P123OpenClient:
             - lastFileId: int = <default>   💡 上一页的最后一条记录的 FileID，翻页查询时需要填写
             - limit: int = 100              💡 分页大小，最多 100
             - parentFileId: int | str = 0   💡 父目录 id，根目录是 0
-            - searchData: str = <default>   💡 搜索关键字，将无视 ``parentFileId``，而进行全局查找
+            - searchData: str = <default>   💡 搜索关键字
             - searchMode: 0 | 1 = 0         💡 搜索模式
 
                 - 0: 模糊搜索（将会根据搜索项分词，查找出相似的匹配项）
@@ -1800,7 +1980,8 @@ class P123OpenClient:
                 - "file_name": 文件名
                 - "size":  文件大小
                 - "create_at": 创建时间
-                - "update_at": 更新时间
+                - "update_at": 创建时间
+                - "update_time": 更新时间
                 - "share_id": 分享 id
                 - ...（其它可能值）
 
@@ -1812,7 +1993,7 @@ class P123OpenClient:
             - page: int = 1               💡 第几页，从 1 开始（可传 0 或不传，视为 1）
             - parentFileId: int | str = 0 💡 父目录 id，根目录是 0
             - trashed: bool  = False 💡 是否查看回收站的文件
-            - searchData: str = <default> 💡 搜索关键字（将无视 ``parentFileId`` 参数）
+            - searchData: str = <default> 💡 搜索关键字
         """
         api = complete_url("/api/v1/file/list", base_url)
         if isinstance(payload, (int, str)):
@@ -1974,6 +2155,9 @@ class P123OpenClient:
 
         POST https://open-api.123pan.com/api/v1/file/recover
 
+        .. note::
+            将回收站的文件恢复至删除前的位置
+
         .. admonition:: Reference
 
             /API列表/文件管理/删除/从回收站恢复文件
@@ -1982,6 +2166,15 @@ class P123OpenClient:
 
         :payload:
             - fileIDs: list[int] 💡 文件 id 列表，最多 100 个
+
+        :return:
+            返回的数据说明如下：
+
+            .. code:: python
+
+                {
+                    "abnormalFileIDs": list[int], # 异常文件目录 id（父级目录不存在），可使用还原文件到指定目录接口；无异常文件则为空
+                }
         """
         api = complete_url("/api/v1/file/recover", base_url)
         if not isinstance(payload, dict):
@@ -1990,6 +2183,67 @@ class P123OpenClient:
             elif not isinstance(payload, (tuple, list)):
                 payload = list(payload)
             payload = {"fileIDs": payload}
+        return self.request(api, "POST", json=payload, async_=async_, **request_kwargs)
+
+    @overload
+    def fs_recover_by_path(
+        self, 
+        payload: dict | int | str | Iterable[int | str], 
+        /, 
+        parent_id: int | str = 0, 
+        base_url: str | Callable[[], str] = DEFAULT_OPEN_BASE_URL, 
+        *, 
+        async_: Literal[False] = False, 
+        **request_kwargs, 
+    ) -> dict:
+        ...
+    @overload
+    def fs_recover_by_path(
+        self, 
+        payload: dict | int | str | Iterable[int | str], 
+        /, 
+        parent_id: int | str = 0, 
+        base_url: str | Callable[[], str] = DEFAULT_OPEN_BASE_URL, 
+        *, 
+        async_: Literal[True], 
+        **request_kwargs, 
+    ) -> Coroutine[Any, Any, dict]:
+        ...
+    def fs_recover_by_path(
+        self, 
+        payload: dict | int | str | Iterable[int | str], 
+        /, 
+        parent_id: int | str = 0, 
+        base_url: str | Callable[[], str] = DEFAULT_OPEN_BASE_URL, 
+        *, 
+        async_: Literal[False, True] = False, 
+        **request_kwargs, 
+    ) -> dict | Coroutine[Any, Any, dict]:
+        """还原文件到指定目录
+
+        POST https://open-api.123pan.com/api/v1/file/recover/by_path
+
+        .. note::
+            将回收站的文件恢复至指定位置
+
+        .. admonition:: Reference
+
+            /API列表/文件管理/删除/还原文件到指定目录
+
+            https://123yunpan.yuque.com/org-wiki-123yunpan-muaork/cr6ced/cl24atug2sviq12z
+
+        :payload:
+            - fileIDs: list[int] 💡 文件 id 列表，最多 100 个
+            - parentFileID: int = 0 💡 指定目录 id
+        """
+        api = complete_url("/api/v1/file/recover/by_path", base_url)
+        if not isinstance(payload, dict):
+            if isinstance(payload, (int, str)):
+                payload = [payload]
+            elif not isinstance(payload, (tuple, list)):
+                payload = list(payload)
+            payload = {"fileIDs": payload}
+        payload = dict_key_to_lower_merge(payload, toParentFileID=parent_id)
         return self.request(api, "POST", json=payload, async_=async_, **request_kwargs)
 
     @overload
@@ -3768,7 +4022,7 @@ class P123OpenClient:
             - fileIDList: str 💡 分享文件 id 列表，最多 100 个，用逗号,分隔连接
             - shareExpire: 0 | 1 | 7 | 30 = 0 💡 分享链接有效期天数，0 为永久
             - shareName: str 💡 分享链接名称，须小于 35 个字符且不能包含特殊字符 ``"\\/:*?|><``
-            - sharePwd: str = "" 💡 设置分享链接提取码
+            - sharePwd: str = "" 💡 提取码（不区分大小写）
             - trafficLimit: int = <default> 💡 免登陆限制流量，单位：字节
             - trafficLimitSwitch: 1 | 2 = <default> 💡 免登录流量限制开关：1:关闭 2:打开
             - trafficSwitch: 1 | 2 | 3 | 4 = <default> 💡 免登录流量包开关
@@ -5070,12 +5324,87 @@ class P123OpenClient:
         return self.request(api, "POST", json=payload, async_=async_, **request_kwargs)
 
     @overload
+    def upload_sha1_reuse(
+        self, 
+        payload: dict, 
+        /, 
+        base_url: str | Callable[[], str] = "https://open-api.123pan.com", 
+        *, 
+        async_: Literal[False] = False, 
+        **request_kwargs, 
+    ) -> dict:
+        ...
+    @overload
+    def upload_sha1_reuse(
+        self, 
+        payload: dict, 
+        /, 
+        base_url: str | Callable[[], str] = "https://open-api.123pan.com", 
+        *, 
+        async_: Literal[True], 
+        **request_kwargs, 
+    ) -> Coroutine[Any, Any, dict]:
+        ...
+    def upload_sha1_reuse(
+        self, 
+        payload: dict, 
+        /, 
+        base_url: str | Callable[[], str] = "https://open-api.123pan.com", 
+        *, 
+        async_: Literal[False, True] = False, 
+        **request_kwargs, 
+    ) -> dict | Coroutine[Any, Any, dict]:
+        """sha1哈希值文件上传
+
+        POST https://open-api.123pan.com/upload/v2/file/sha1_reuse
+
+        .. note::
+            - 文件名要小于 256 个字符且不能包含以下任何字符：``"\\/:*?|><``
+            - 文件名不能全部是空格
+
+        .. admonition:: Reference
+
+            /API列表/文件管理/上传/sha1哈希值文件上传
+
+            https://123yunpan.yuque.com/org-wiki-123yunpan-muaork/cr6ced/de0et33ct3uhdfqs
+
+        :payload:
+            - sha1: str 💡 文件 sha1
+            - size: int 💡 文件大小，单位：字节
+            - filename: str 💡 文件名，默认为 f"{sha1}-{size}"
+            - parentFileID: int = 0 💡 父目录 id，根目录是 0
+            - duplicate: 0 | 1 | 2 = 0 💡 处理同名：0: 跳过/报错 1: 保留/后缀编号 2: 替换/覆盖
+
+        :return:
+            返回的数据说明如下：
+
+            .. code:: python
+
+                {
+                    "fileID": int, # 文件 ID。当 123 云盘已有该文件,则会发生秒传。此时会将文件 ID 字段返回。唯一
+                    "reuse": bool, # 是否秒传，返回true时表示文件已上传成功
+                }
+        """
+        payload = dict_key_to_lower_merge(payload, {
+            "filename": "{sha1}-{size}".format_map(payload), 
+            "parentFileId": "0", 
+        })
+        return self.request(
+            "/upload/v2/file/sha1_reuse", 
+            "POST", 
+            data=payload, 
+            base_url=base_url, 
+            async_=async_, 
+            **request_kwargs, 
+        )
+
+    @overload
     def upload_single(
         self, 
         payload: dict, 
         /, 
         file: Buffer | SupportsRead[Buffer] | Iterable[Buffer], 
-        base_url: str | Callable[[], str] = "https://openapi-upload.123242.com", 
+        base_url: str | Callable[[], str] = "https://open-api.123pan.com", 
         *, 
         async_: Literal[False] = False, 
         **request_kwargs, 
@@ -5087,7 +5416,7 @@ class P123OpenClient:
         payload: dict, 
         /, 
         file: Buffer | SupportsRead[Buffer] | Iterable[Buffer] | AsyncIterable[Buffer], 
-        base_url: str | Callable[[], str] = "https://openapi-upload.123242.com", 
+        base_url: str | Callable[[], str] = "https://open-api.123pan.com", 
         *, 
         async_: Literal[True], 
         **request_kwargs, 
@@ -5098,7 +5427,7 @@ class P123OpenClient:
         payload: dict, 
         /, 
         file: Buffer | SupportsRead[Buffer] | Iterable[Buffer] | AsyncIterable[Buffer], 
-        base_url: str | Callable[[], str] = "https://openapi-upload.123242.com", 
+        base_url: str | Callable[[], str] = "https://open-api.123pan.com", 
         *, 
         async_: Literal[False, True] = False, 
         **request_kwargs, 
@@ -5160,7 +5489,7 @@ class P123OpenClient:
         payload: dict, 
         /, 
         slice: Buffer | SupportsRead[Buffer] | Iterable[Buffer], 
-        base_url: str | Callable[[], str] = "https://openapi-upload.123242.com", 
+        base_url: str | Callable[[], str] = "https://open-api.123pan.com", 
         *, 
         async_: Literal[False] = False, 
         **request_kwargs, 
@@ -5172,7 +5501,7 @@ class P123OpenClient:
         payload: dict, 
         /, 
         slice: Buffer | SupportsRead[Buffer] | Iterable[Buffer] | AsyncIterable[Buffer], 
-        base_url: str | Callable[[], str] = "https://openapi-upload.123242.com", 
+        base_url: str | Callable[[], str] = "https://open-api.123pan.com", 
         *, 
         async_: Literal[True], 
         **request_kwargs, 
@@ -5183,7 +5512,7 @@ class P123OpenClient:
         payload: dict, 
         /, 
         slice: Buffer | SupportsRead[Buffer] | Iterable[Buffer] | AsyncIterable[Buffer], 
-        base_url: str | Callable[[], str] = "https://openapi-upload.123242.com", 
+        base_url: str | Callable[[], str] = "https://open-api.123pan.com", 
         *, 
         async_: Literal[False, True] = False, 
         **request_kwargs, 
@@ -5641,6 +5970,9 @@ class P123OpenClient:
     dlink_transcode_query_open = dlink_transcode_query
     dlink_url_open = dlink_url
     download_info_open = download_info
+    fs_copy_open = fs_copy
+    fs_copy_one_open = fs_copy_one
+    fs_copy_process_open = fs_copy_process
     fs_delete_open = fs_delete
     fs_detail_open = fs_detail
     fs_info_open = fs_info
@@ -5650,6 +5982,7 @@ class P123OpenClient:
     fs_mkdir_open = fs_mkdir
     fs_move_open = fs_move
     fs_recover_open = fs_recover
+    fs_recover_by_path_open = fs_recover_by_path
     fs_rename_open = fs_rename
     fs_rename_one_open = fs_rename_one
     fs_trash_open = fs_trash
@@ -5700,6 +6033,7 @@ class P123OpenClient:
     upload_file_open = upload_file
     upload_list_open = upload_list
     upload_result_open = upload_result
+    upload_sha1_reuse_open = upload_sha1_reuse
     upload_single_open = upload_single
     upload_slice_open = upload_slice
     upload_url_open = upload_url
@@ -6792,7 +7126,7 @@ class P123Client(P123OpenClient):
 
         POST https://www.123pan.com/api/file/batch_download_info
 
-        .. warning::
+        .. attention::
             会把一些文件或目录以 zip 包的形式下载，但非会员有流量限制，所以还是推荐用 ``P123Client.download_info`` 逐个获取下载链接并下载
 
         :payload:
@@ -7210,6 +7544,57 @@ class P123Client(P123OpenClient):
         return run_gen_step(gen_step, async_)
 
     @overload
+    def fs_copy_task(
+        self, 
+        payload: dict | int, 
+        /, 
+        base_url: str | Callable[[], str] = DEFAULT_BASE_URL, 
+        *, 
+        async_: Literal[False] = False, 
+        **request_kwargs, 
+    ) -> dict:
+        ...
+    @overload
+    def fs_copy_task(
+        self, 
+        payload: dict | int, 
+        /, 
+        base_url: str | Callable[[], str] = DEFAULT_BASE_URL, 
+        *, 
+        async_: Literal[True], 
+        **request_kwargs, 
+    ) -> Coroutine[Any, Any, dict]:
+        ...
+    def fs_copy_task(
+        self, 
+        payload: dict | int, 
+        /, 
+        base_url: str | Callable[[], str] = DEFAULT_BASE_URL, 
+        *, 
+        async_: Literal[False, True] = False, 
+        **request_kwargs, 
+    ) -> dict | Coroutine[Any, Any, dict]:
+        """复制：任务进度
+
+        GET https://www.123pan.com/api/restful/goapi/v1/file/copy/task
+
+        :payload:
+            - taskId: int 💡 任务 id
+        """
+        def gen_step():
+            nonlocal payload
+            if not isinstance(payload, dict):
+                payload = {"taskId": payload}
+            return self.request(
+                "restful/goapi/v1/file/copy/task", 
+                params=payload, 
+                base_url=base_url, 
+                async_=async_, 
+                **request_kwargs, 
+            )
+        return run_gen_step(gen_step, async_)
+
+    @overload
     def fs_detail(
         self, 
         payload: dict | int | str, 
@@ -7252,6 +7637,59 @@ class P123Client(P123OpenClient):
         return self.request(
             "file/detail", 
             params=payload, 
+            base_url=base_url, 
+            async_=async_, 
+            **request_kwargs, 
+        )
+
+    @overload
+    def fs_details(
+        self, 
+        payload: dict | int | str | Iterable[int | str], 
+        /, 
+        base_url: str | Callable[[], str] = DEFAULT_BASE_URL, 
+        *, 
+        async_: Literal[False] = False, 
+        **request_kwargs, 
+    ) -> dict:
+        ...
+    @overload
+    def fs_details(
+        self, 
+        payload: dict | int | str | Iterable[int | str], 
+        /, 
+        base_url: str | Callable[[], str] = DEFAULT_BASE_URL, 
+        *, 
+        async_: Literal[True], 
+        **request_kwargs, 
+    ) -> Coroutine[Any, Any, dict]:
+        ...
+    def fs_details(
+        self, 
+        payload: dict | int | str | Iterable[int | str], 
+        /, 
+        base_url: str | Callable[[], str] = DEFAULT_BASE_URL, 
+        *, 
+        async_: Literal[False, True] = False, 
+        **request_kwargs, 
+    ) -> dict | Coroutine[Any, Any, dict]:
+        """获取文件或目录详情（文件数、目录数、总大小等）
+
+        POST https://www.123pan.com/api/restful/goapi/v1/file/details
+
+        :payload:
+            - file_ids: list[int] 💡 文件或目录的 id 列表
+        """
+        if not isinstance(payload, dict):
+            if isinstance(payload, (int, str)):
+                payload = [payload]
+            elif not isinstance(payload, (tuple, list)):
+                payload = list(payload)
+            payload = {"file_ids": payload}
+        return self.request(
+            "restful/goapi/v1/file/details", 
+            method="POST", 
+            json=payload, 
             base_url=base_url, 
             async_=async_, 
             **request_kwargs, 
@@ -7322,6 +7760,76 @@ class P123Client(P123OpenClient):
         )
 
     @overload
+    def fs_export_tree(
+        self, 
+        payload: dict | int | str | Iterable[int | str], 
+        /, 
+        base_url: str | Callable[[], str] = DEFAULT_BASE_URL, 
+        *, 
+        async_: Literal[False] = False, 
+        **request_kwargs, 
+    ) -> dict:
+        ...
+    @overload
+    def fs_export_tree(
+        self, 
+        payload: dict | int | str | Iterable[int | str], 
+        /, 
+        base_url: str | Callable[[], str] = DEFAULT_BASE_URL, 
+        *, 
+        async_: Literal[True], 
+        **request_kwargs, 
+    ) -> Coroutine[Any, Any, dict]:
+        ...
+    def fs_export_tree(
+        self, 
+        payload: dict | int | str | Iterable[int | str], 
+        /, 
+        base_url: str | Callable[[], str] = DEFAULT_BASE_URL, 
+        *, 
+        async_: Literal[False, True] = False, 
+        **request_kwargs, 
+    ) -> dict | Coroutine[Any, Any, dict]:
+        """导出目录树
+
+        POST https://www.123pan.com/api/restful/goapi/v1/file/export-tree
+
+        .. caution::
+            单次最多支持导出 100 万条目录数据
+
+        :payload:
+            - fileIds: list[int] 💡 文件或目录的 id 列表
+            - exportLayer: int = 0 💡 导出层级：0-导出全部 n-导出1级到n级
+            - exportName: str = <default> 💡 存储为（文本文件名）：默认为 f"目录树_{datetime.datetime.now().strftime("%FT%T")}.txt"
+            - exportParentId: int = 0 💡 存储位置
+            - exportStyle: 1 | 2 = 2 💡 导出目录样式：1-目录树 2-目录列表
+            - exportType: 1 | 2 | 3 = 3 💡 导出类型：1-包含文件 2-包含文件夹 3-包含文件和文件夹
+            - treeRootType: 1 | 2 = 1 💡 目录树根：1-当前目录 2-网盘根目录
+        """
+        if not isinstance(payload, dict):
+            if isinstance(payload, (int, str)):
+                payload = [payload]
+            elif not isinstance(payload, (tuple, list)):
+                payload = list(payload)
+            payload = {"fileIds": payload}
+        payload = dict_key_to_lower_merge(payload, {
+            "exportLayer": 0, 
+            "exportName": f"目录树_{datetime.now().strftime("%FT%T")}.txt", 
+            "exportParentId": 0, 
+            "treeRootType": 1, 
+            "exportStyle": 2, 
+            "exportType": 3, 
+        })
+        return self.request(
+            "restful/goapi/v1/file/export-tree", 
+            method="POST", 
+            json=payload, 
+            base_url=base_url, 
+            async_=async_, 
+            **request_kwargs, 
+        )
+
+    @overload
     def fs_get_path(
         self, 
         payload: dict | int, 
@@ -7366,6 +7874,59 @@ class P123Client(P123OpenClient):
             payload = {"fileId": payload}
         return self.request(
             "file/get_path", 
+            "POST", 
+            json=payload, 
+            base_url=base_url, 
+            async_=async_, 
+            **request_kwargs, 
+        )
+
+    @overload
+    def fs_get_path_history(
+        self, 
+        payload: dict | int | str | Iterable[int | str] = 0, 
+        /, 
+        base_url: str | Callable[[], str] = DEFAULT_BASE_URL, 
+        *, 
+        async_: Literal[False] = False, 
+        **request_kwargs, 
+    ) -> dict:
+        ...
+    @overload
+    def fs_get_path_history(
+        self, 
+        payload: dict | int | str | Iterable[int | str] = 0, 
+        /, 
+        base_url: str | Callable[[], str] = DEFAULT_BASE_URL, 
+        *, 
+        async_: Literal[True], 
+        **request_kwargs, 
+    ) -> Coroutine[Any, Any, dict]:
+        ...
+    def fs_get_path_history(
+        self, 
+        payload: dict | int | str | Iterable[int | str] = 0, 
+        /, 
+        base_url: str | Callable[[], str] = DEFAULT_BASE_URL, 
+        *, 
+        async_: Literal[False, True] = False, 
+        **request_kwargs, 
+    ) -> dict | Coroutine[Any, Any, dict]:
+        """分别获取一组 id 对应的祖先节点信息（此接口是 ``client.fs_get_path()`` 的加强版）
+
+        POST https://www.123pan.com/api/file/get_path_history
+
+        :payload:
+            - fileIdList: list[int]
+        """
+        if not isinstance(payload, dict):
+            if isinstance(payload, (int, str)):
+                payload = [payload]
+            elif not isinstance(payload, (tuple, list)):
+                payload = list(payload)
+            payload = {"fileIdList": payload}
+        return self.request(
+            "file/get_path_history", 
             "POST", 
             json=payload, 
             base_url=base_url, 
@@ -7491,7 +8052,7 @@ class P123Client(P123OpenClient):
                 - "syncFileList": 同步空间
 
             - operateType: int | str = <default> 💡 操作类型，如果在同步空间，则需要指定为 "SyncSpacePage"
-            - SearchData: str = <default> 💡 搜索关键字（将无视 ``parentFileId`` 参数）
+            - SearchData: str = <default> 💡 搜索关键字
             - OnlyLookAbnormalFile: int = <default>
         """
         if isinstance(payload, (int, str)):
@@ -7565,9 +8126,9 @@ class P123Client(P123OpenClient):
             - next: int = 0     💡 下一批拉取开始的 id（⚠️ 不可用）
             - category: int = 1 💡 分类代码
 
-                - 1: 音频
-                - 2: 视频
-                - 3: 图片
+                - 1: 视频
+                - 2: 图片
+                - 3: 文档
                 - 4: 音频
                 - 5: 其它
 
@@ -7582,7 +8143,8 @@ class P123Client(P123OpenClient):
                 - "file_name":   文件名
                 - "size":        文件大小
                 - "create_at":   创建时间
-                - "update_at":   更新时间
+                - "update_at":   创建时间
+                - "update_time": 更新时间
                 - ...（其它可能值）
 
             - orderDirection: "asc" | "desc" = "asc" 💡 排序顺序
@@ -7601,7 +8163,8 @@ class P123Client(P123OpenClient):
                 .. note::
                     这个值似乎不影响结果，所以可以忽略。我在浏览器中，看到罗列根目录为 1，搜索（指定 ``SearchData``）为 2，同步空间的根目录为 3，罗列其它目录大多为 4，偶尔为 8，也可能是其它值
 
-            - SearchData: str = <default> 💡 搜索关键字（将无视 ``parentFileId`` 参数）
+            - isSearchOrder: bool = <default>
+            - SearchData: str = <default> 💡 搜索关键字
             - OnlyLookAbnormalFile: int = 0 💡 大概可传入 0 或 1
         """
         if not isinstance(payload, dict):
@@ -7672,15 +8235,15 @@ class P123Client(P123OpenClient):
 
         :payload:
             - driveId: int | str = 0
-            - limit: int = 100 💡 分页大小，最多 100 个
-            - next: int = 0    💡 下一批拉取开始的 id（⚠️ 不可用）
+            - limit: int = 100 💡 分页大小，最多 100 个（如果 "SearchData" 为空且请求头的 "platform" 字段为 "web"，则固定为 500）
             - orderBy: str = "file_id" 💡 排序依据
 
                 - "file_id": 文件 id，也可以写作 "fileId"
                 - "file_name":   文件名
                 - "size":        文件大小
                 - "create_at":   创建时间
-                - "update_at":   更新时间
+                - "update_at":   创建时间
+                - "update_time": 更新时间
                 - "trashed_at":  删除时间
                 - "remain_days": 剩余保留天数
                 - "share_id":    分享 id
@@ -7689,8 +8252,10 @@ class P123Client(P123OpenClient):
             - orderDirection: "asc" | "desc" = "asc" 💡 排序顺序
             - Page: int = 1 💡 第几页，从 1 开始
             - parentFileId: int | str = 0 💡 父目录 id
+            - parentFileName: str = <default> 💡 父目录名
             - trashed: bool = <default> 💡 是否查看回收站的文件
             - inDirectSpace: bool  = False
+            - fileCategory: int = 0 💡 文件类型：0-全部 1-图片 2-视频 3-音频 4-文档 5-文件夹 6-压缩包 7-其它
             - event: str = "homeListFile" 💡 事件名称
 
                 - "homeListFile": 全部文件
@@ -7702,7 +8267,8 @@ class P123Client(P123OpenClient):
                 .. note::
                     这个值似乎不影响结果，所以可以忽略。我在浏览器中，看到罗列根目录为 1，搜索（指定 ``SearchData``）为 2，同步空间的根目录为 3，罗列其它目录大多为 4，偶尔为 8，也可能是其它值
 
-            - SearchData: str = <default> 💡 搜索关键字（将无视 ``parentFileId`` 参数）
+            - isSearchOrder: bool = <default>
+            - SearchData: str = <default> 💡 搜索关键字（最多能搜出 1 万条）
             - OnlyLookAbnormalFile: int = 0 💡 大概可传入 0 或 1
             - RequestSource: int = <default> 💡 浏览器中，在同步空间中为 1
         """
@@ -7711,11 +8277,11 @@ class P123Client(P123OpenClient):
         payload = dict_key_to_lower_merge(payload, {
             "driveId": 0, 
             "limit": 100, 
-            "next": 0, 
             "orderBy": "file_id", 
             "orderDirection": "asc", 
             "parentFileId": 0, 
             "inDirectSpace": False, 
+            "fileCategory": 0, 
             "event": event, 
             "OnlyLookAbnormalFile": 0, 
             "Page": 1, 
@@ -7767,7 +8333,7 @@ class P123Client(P123OpenClient):
         async_: Literal[False, True] = False, 
         **request_kwargs, 
     ) -> dict | Coroutine[Any, Any, dict]:
-        """创建目录
+        """创建目录，此接口是 ``client.upload_request()`` 的封装
 
         :param name: 目录名
         :param parent_id: 父目录 id
@@ -8078,7 +8644,7 @@ class P123Client(P123OpenClient):
         async_: Literal[False, True] = False, 
         **request_kwargs, 
     ) -> dict | Coroutine[Any, Any, dict]:
-        """给文件或目录，设置或取消星标
+        """给文件或目录，设置或取消星标（收藏）
 
         POST https://www.123pan.com/api/restful/goapi/v1/file/starred
 
@@ -8150,7 +8716,8 @@ class P123Client(P123OpenClient):
                 - "file_name":   文件名
                 - "size":        文件大小
                 - "create_at":   创建时间
-                - "update_at":   更新时间
+                - "update_at":   创建时间
+                - "update_time": 更新时间
                 - "trashed_at":  删除时间
                 - "share_id":    分享 id
                 - "remain_days": 剩余保留天数
@@ -8162,6 +8729,7 @@ class P123Client(P123OpenClient):
             - parentFileId: int | str = 0 💡 父目录 id
             - trashed: bool = <default> 💡 是否查看回收站的文件
             - inDirectSpace: bool  = False
+            - fileCategory: int = 0 💡 文件类型：0-全部 1-图片 2-视频 3-音频 4-文档 5-文件夹 6-压缩包 7-其它
             - event: str = "homeListFile" 💡 事件名称
 
                 - "homeListFile": 全部文件
@@ -8173,7 +8741,8 @@ class P123Client(P123OpenClient):
                 .. note::
                     这个值似乎不影响结果，所以可以忽略。我在浏览器中，看到罗列根目录为 1，搜索（指定 ``SearchData``）为 2，同步空间的根目录为 3，罗列其它目录大多为 4，偶尔为 8，也可能是其它值
 
-            - SearchData: str = <default> 💡 搜索关键字（将无视 ``parentFileId`` 参数）
+            - isSearchOrder: bool = <default>
+            - SearchData: str = <default> 💡 搜索关键字
             - OnlyLookAbnormalFile: int = 0 💡 大概可传入 0 或 1
         """
         if not isinstance(payload, dict):
@@ -8187,6 +8756,7 @@ class P123Client(P123OpenClient):
             "pageSize": 100, 
             "parentFileId": 0, 
             "inDirectSpace": False, 
+            "fileCategory": 0, 
             "event": event, 
             "OnlyLookAbnormalFile": 0, 
         })
@@ -8289,7 +8859,7 @@ class P123Client(P123OpenClient):
         POST https://www.123pan.com/api/file/trash
 
         :payload:
-            - fileTrashInfoList: list[File] 💡 信息可以取自 ``P123Client.fs_info`` 接口
+            - fileTrashInfoList: list[File] 💡 信息可以取自 ``P123Client.fs_info`` 接口，也可以仅文件 id
 
                 .. code:: python
 
@@ -8307,6 +8877,7 @@ class P123Client(P123OpenClient):
             - operation: bool = <default>
             - operatePlace: int = <default>
             - RequestSource: int = <default> 💡 浏览器中，在同步空间中为 1
+            - safeBox: bool = <default>
         """
         if isinstance(payload, (int, str)):
             payload = {"fileTrashInfoList": [{"FileId": payload}]}
@@ -8365,6 +8936,64 @@ class P123Client(P123OpenClient):
         payload.setdefault("event", "recycleClear")
         return self.request(
             "file/trash_delete_all", 
+            "POST", 
+            json=payload, 
+            base_url=base_url, 
+            async_=async_, 
+            **request_kwargs, 
+        )
+
+    @overload
+    def fs_trash_recover_by_path(
+        self, 
+        payload: dict | int | str | Iterable[int | str], 
+        /, 
+        parent_id: int | str = 0, 
+        base_url: str | Callable[[], str] = DEFAULT_BASE_URL, 
+        *, 
+        async_: Literal[False] = False, 
+        **request_kwargs, 
+    ) -> dict:
+        ...
+    @overload
+    def fs_trash_recover_by_path(
+        self, 
+        payload: dict | int | str | Iterable[int | str], 
+        /, 
+        parent_id: int | str = 0, 
+        base_url: str | Callable[[], str] = DEFAULT_BASE_URL, 
+        *, 
+        async_: Literal[True], 
+        **request_kwargs, 
+    ) -> Coroutine[Any, Any, dict]:
+        ...
+    def fs_trash_recover_by_path(
+        self, 
+        payload: dict | int | str | Iterable[int | str], 
+        /, 
+        parent_id: int | str = 0, 
+        base_url: str | Callable[[], str] = DEFAULT_BASE_URL, 
+        *, 
+        async_: Literal[False, True] = False, 
+        **request_kwargs, 
+    ) -> dict | Coroutine[Any, Any, dict]:
+        """回收站：还原到指定位置
+
+        POST https://www.123pan.com/api/file/recover/by_path
+
+        :payload:
+            - fileIds: list[int] 💡 文件或目录的 id 列表
+            - parentFileId: int = 0 💡 父目录 id
+        """
+        if not isinstance(payload, dict):
+            if isinstance(payload, (int, str)):
+                payload = [payload]
+            elif not isinstance(payload, (tuple, list)):
+                payload = list(payload)
+            payload = {"fileIds": payload}
+        payload = dict_key_to_lower_merge(payload, parentFileId=parent_id)
+        return self.request(
+            "file/recover/by_path", 
             "POST", 
             json=payload, 
             base_url=base_url, 
@@ -9166,7 +9795,7 @@ class P123Client(P123OpenClient):
         :payload:
             - current_page: int = 1
             - page_size: 100
-            - status_arr: list[ 0 | 1 | 2 | 3 | 4 ] = [0, 1, 2, 3, 4] 💡 状态列表：0:进行中 1:下载失败 2:下载成功 3:重试中
+            - status_arr: list[ 0 | 1 | 2 | 3 | 4 ] = [0, 1, 2, 3, 4] 💡 状态列表：0:进行中 1:下载失败 2:下载成功 3:重试中 4:等待中
         """
         if isinstance(payload, int):
             payload = {"current_page": payload}
@@ -9229,6 +9858,46 @@ class P123Client(P123OpenClient):
             "v2/offline_download/task/resolve", 
             "POST", 
             json=payload, 
+            base_url=base_url, 
+            async_=async_, 
+            **request_kwargs, 
+        )
+
+    @overload
+    def offline_task_status(
+        self, 
+        /, 
+        base_url: str | Callable[[], str] = DEFAULT_BASE_URL, 
+        *, 
+        async_: Literal[False] = False, 
+        **request_kwargs, 
+    ) -> dict:
+        ...
+    @overload
+    def offline_task_status(
+        self, 
+        /, 
+        base_url: str | Callable[[], str] = DEFAULT_BASE_URL, 
+        *, 
+        async_: Literal[True], 
+        **request_kwargs, 
+    ) -> Coroutine[Any, Any, dict]:
+        ...
+    def offline_task_status(
+        self, 
+        /, 
+        base_url: str | Callable[[], str] = DEFAULT_BASE_URL, 
+        *, 
+        async_: Literal[False, True] = False, 
+        **request_kwargs, 
+    ) -> dict | Coroutine[Any, Any, dict]:
+        """离线下载速度等信息
+
+        POST https://www.123pan.com/api/offline_download/task/status
+        """
+        return self.request(
+            "offline_download/task/status", 
+            "POST", 
             base_url=base_url, 
             async_=async_, 
             **request_kwargs, 
@@ -9650,7 +10319,7 @@ class P123Client(P123OpenClient):
             - resourceDesc: str = ""     💡 资源描述
             - shareModality: int = <default>
             - shareName: str = <default> 💡 分享名称
-            - sharePwd: str = ""         💡 分享密码
+            - sharePwd: str = ""         💡 提取码（不区分大小写）
             - trafficLimit: int = 0      💡 流量限制额度，单位字节
             - trafficLimitSwitch: 1 | 2 = 1 💡 是否开启流量限制：1:关闭 2:开启
             - trafficSwitch: 1 | 2 | 3 | 4 = <default> 💡 免登录流量包开关
@@ -9737,7 +10406,7 @@ class P123Client(P123OpenClient):
 
         :payload:
             - ShareKey: str 💡 分享码
-            - SharePwd: str = <default> 💡 密码，如果没有就不用传
+            - SharePwd: str = <default> 💡 提取码（不区分大小写）
             - Etag: str
             - S3KeyFlag: str
             - FileID: int | str
@@ -9806,7 +10475,7 @@ class P123Client(P123OpenClient):
 
         :payload:
             - ShareKey: str 💡 分享码
-            - SharePwd: str = <default> 💡 密码，如果没有就不用传
+            - SharePwd: str = <default> 💡 提取码（不区分大小写）
             - fileIdList: list[FileID]
 
                 .. code:: python
@@ -9984,7 +10653,7 @@ class P123Client(P123OpenClient):
 
         :payload:
             - ShareKey: str 💡 分享码
-            - SharePwd: str = <default> 💡 密码，如果没有就不用传
+            - SharePwd: str = <default> 💡 提取码（不区分大小写）
             - limit: int = 100 💡 分页大小，最多 100 个
             - next: int = 0    💡 下一批拉取开始的 id（⚠️ 不可用）
             - orderBy: str = "file_name" 💡 排序依据
@@ -9992,7 +10661,8 @@ class P123Client(P123OpenClient):
                 - "file_name": 文件名
                 - "size":  文件大小
                 - "create_at": 创建时间
-                - "update_at": 更新时间
+                - "update_at": 创建时间
+                - "update_time": 更新时间
                 - ...（其它可能值）
 
             - orderDirection: "asc" | "desc" = "asc" 💡 排序顺序
@@ -10080,7 +10750,7 @@ class P123Client(P123OpenClient):
             - Page: int = <default> 💡 第几页，从 1 开始，可以是 0
             - event: str = "shareListFile"
             - operateType: int | str = <default>
-            - SearchData: str = <default> 💡 搜索关键字（将无视 ``parentFileId`` 参数）
+            - SearchData: str = <default> 💡 搜索关键字
         """
         if isinstance(payload, int):
             payload = {"Page": payload}
@@ -10150,7 +10820,7 @@ class P123Client(P123OpenClient):
             - Page: int = <default> 💡 第几页，从 1 开始，可以是 0
             - event: str = "shareListFile"
             - operateType: int | str = <default>
-            - SearchData: str = <default> 💡 搜索关键字（将无视 ``parentFileId`` 参数）
+            - SearchData: str = <default> 💡 搜索关键字
         """
         if isinstance(payload, int):
             payload = {"Page": payload}
@@ -10313,6 +10983,63 @@ class P123Client(P123OpenClient):
         """
         return self.request(
             "restful/goapi/v1/share/info", 
+            "PUT", 
+            json=payload, 
+            base_url=base_url, 
+            async_=async_, 
+            **request_kwargs, 
+        )
+
+    @overload
+    def share_update(
+        self, 
+        payload: dict, 
+        /, 
+        base_url: str | Callable[[], str] = DEFAULT_BASE_URL, 
+        *, 
+        async_: Literal[False] = False, 
+        **request_kwargs, 
+    ) -> dict:
+        ...
+    @overload
+    def share_update(
+        self, 
+        payload: dict, 
+        /, 
+        base_url: str | Callable[[], str] = DEFAULT_BASE_URL, 
+        *, 
+        async_: Literal[True], 
+        **request_kwargs, 
+    ) -> Coroutine[Any, Any, dict]:
+        ...
+    def share_update(
+        self, 
+        payload: dict, 
+        /, 
+        base_url: str | Callable[[], str] = DEFAULT_BASE_URL, 
+        *, 
+        async_: Literal[False, True] = False, 
+        **request_kwargs, 
+    ) -> dict | Coroutine[Any, Any, dict]:
+        """编辑分享
+
+        PUT https://www.123pan.com/api/restful/goapi/v1/share/update
+
+        :payload:
+            - shareId: int 💡 分享 id
+            - shareName: str = <default> 💡 分享名称
+            - expiration: str = <default> 💡 过期时间
+            - trafficLimit: int = <default> 💡 免登陆限制流量，单位：字节
+            - trafficLimitSwitch: 1 | 2 = <default> 💡 免登录流量限制开关：1:关闭 2:打开
+            - trafficSwitch: 1 | 2 | 3 | 4 = <default> 💡 免登录流量包开关
+
+                - 1: 游客免登录提取（关） 超流量用户提取（关）
+                - 2: 游客免登录提取（开） 超流量用户提取（关）
+                - 3: 游客免登录提取（关） 超流量用户提取（开）
+                - 4: 游客免登录提取（开） 超流量用户提取（开）
+        """
+        return self.request(
+            "restful/goapi/v1/share/update", 
             "PUT", 
             json=payload, 
             base_url=base_url, 

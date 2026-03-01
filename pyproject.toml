@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "p123client"
-version = "0.0.9.1"
+version = "0.0.9.3"
 description = "Python 123 webdisk client."
 authors = ["ChenyangGao <wosiwujm@gmail.com>"]
 license = "MIT"
@@ -28,18 +28,18 @@ include = [
 [tool.poetry.dependencies]
 python = "^3.12"
 httpx = "*"
-httpx_request = ">=0.1.8"
+httpx_request = ">=0.1.9"
 multidict = "*"
 orjson = "*"
-python-asynctools = ">=0.1.3"
+python-asynctools = ">=0.1.3.4"
 python-encode_uri = ">=0.0.3"
 python-property = ">=0.0.3"
-python-hashtools = ">=0.0.5"
-python-httpfile = ">=0.0.5"
+python-hashtools = ">=0.0.6"
+python-httpfile = ">=0.0.5.4"
 python-iterutils = ">=0.2.7"
-python-filewrap = ">=0.2.8"
-python-http_request = ">=0.1.0.1"
-python-undefined = ">=0.0.3"
+python-filewrap = ">=0.2.9"
+python-http_request = ">=0.1.7.1"
+python-undefined = ">=0.0.4"
 qrcode = "*"
 yarl = "*"
 

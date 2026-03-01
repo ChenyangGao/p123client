@@ -274,6 +274,7 @@ def iterdir(
         match list_method:
             case "list_new":
                 method = client.fs_list_new
+                request_kwargs["headers"] = dict(request_kwargs.get("headers") or (), platform="web")
             case "list_v1":
                 method = client.fs_list_v1_open
             case "list_v2":

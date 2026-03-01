@@ -12,6 +12,11 @@
 
 支持同步和异步操作，全面封装了各种 **web**、**app** 和 **[open](https://123yunpan.yuque.com/org-wiki-123yunpan-muaork/cr6ced/)** 接口。
 
+## 原创玄幻小说《叶不凡修仙记》
+
+- GitHub: [https://github.com/chenyangGao/adventures-of-super-ye](https://github.com/chenyangGao/adventures-of-super-ye)
+- 博客：[https://open.forem.com/super-ye](https://open.forem.com/super-ye)
+
 ## 安装
 
 你可以从 [pypi](https://pypi.org/project/p123client/) 安装最新版本
